@@ -1,0 +1,74 @@
+follow below to get started
+https://wiki.pdl.cmu.edu/Narwhal/WebHome#Getting_Started
+
+Custom-built image with bosen dependencies is named:
+ubuntu-14-bosen-2
+
+I used panfs for permanent storage. ns files in this dir will load panfs automatically at experiment startup
+
+Compiled Bosen can be found at:
+/panfs/pana/probescratch/narwhal/wan-ml/parameter_server-adagrad
+
+A useful tool to use is pdsh, which can send commands to different machines:
+for example to find out all the ip addresses of your experiment nodes, put the domain name of each machine into a file called "machines", and then run:
+
+pdsh -R ssh -w ^machines "ifconfig | grep 'inet addr'"
+
+
+
+=======================================================
+Personal Notes:
+
+1. need to use 40gb for topology
+2. pdsh having trouble: host key authentication failed. need to find a way to add machiens to known hosts
+
+pdsh -R ssh -w ^machines "/share/probe/bin/linux-panfs -f"
+
+3. notes: when making third party dependecies, there are some packages needs to be installed.. -> need create that in os image
+
+compiler error: /usr/bin/ld not able to find luuid
+luuid -> need to install libuuid-dev
+lnuma --> libnuma1, libnuma-dev
+
+
+need to install all dependency listed at bosen installation page:
+sudo apt-get -y install g++ make autoconf git libtool uuid-dev openssh-server cmake libopenmpi-dev openmpi-bin libssl-dev libnuma-dev python-dev python-numpy python-scipy python-yaml protobuf-compiler subversion libxml2-dev libxslt-dev zlibc zlib1g zlib1g-dev libbz2-1.0 libbz2-dev
+
+did a 'make clean' to fix the problems before installing above packages
+
+possibly need to do a reinstall of bosen?:
+         1. run third_party make first
+
+parameter_server build error:
+   eigen/dense not found --> change Makefile in the project root directory to use third_party_all
+   oprofile doesn't have 'make install' --> removed oprofile from third_party_all
+   iftop doesn't have 'make install' --> removed iftop from third_party_all
+
+finished building parameter server. able to run on local machine
+however ssh remote execution becomes a problem. seems that such commands are not correctly executed by remote side
+
+
+
+------------------------------------
+narwhal setup:
+sudo mount.panfs panfs://10.25.0.200:global /panfs
+
+set-links
+set-link-loss are not usable
+
+
+
+useful commands:
+pdsh -R ssh -w ^machines "/share/probe/bin/linux-panfs -f"
+pdsh -R ssh -w ^machines "sudo mount.panfs panfs://10.25.0.200:global /panfs"
+pdsh -R ssh -w ^machines "ifconfig | grep 'inet addr'"
+/panfs/pana/probescratch/narwhal/wan-ml/parameter_server-adagrad
+
+Host [IP Address] 
+   StrictHostKeyChecking no
+
+10.92.2.61
+
+
+echo "Host * \n \
+   StrictHostKeyChecking no" >> ~/.ssh/config

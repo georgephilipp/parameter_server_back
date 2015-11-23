@@ -1,0 +1,34 @@
+# 3 machine ns file
+# using custom-built image with petuum dependency
+
+set ns [new Simulator]
+source tb_compat.tcl
+
+#node1
+set node1 [$ns node]
+node1 add-desire rr 1.0
+#tb-set-node-os node1 UBUNTU14-64-PROBE
+tb-set-node-os node1 ubuntu-14-bosen-2
+
+set node2 [$ns node]
+node2 add-desire rr 1.0
+tb-set-node-os node2 ubuntu-14-bosen-2
+
+set node3 [$ns node]
+node3 add-desire rr 1.0
+tb-set-node-os node3 ubuntu-14-bosen-2
+
+tb-set-node-startcmd $node1 "sudo mount.panfs panfs://10.25.0.200:global /panfs && (echo 'Host *';echo 'StrictHostKeyChecking no') > foo"
+
+tb-set-node-startcmd $node2 "sudo mount.panfs panfs://10.25.0.200:global /panfs"
+tb-set-node-startcmd $node3 "sudo mount.panfs panfs://10.25.0.200:global /panfs"
+
+
+#tb-set-node-os node2 UBUNTU14-64-PROBE
+
+# set link doesn't work in narwhal
+# $ns duplex-link $node1 $node2 100Mb 150ms DropTail
+# tb-set-link-loss $node1 $node2 0.05
+
+$ns rtproto Static
+$ns run
