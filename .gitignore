@@ -31,3 +31,6 @@ tags
 
 # osx
 .DS_Store
+
+# ubuntu
+*~
