@@ -33,12 +33,18 @@ public:
   virtual float CrossEntropyLoss(const std::vector<float>& prediction, int32_t label)
     const = 0;
 
-  // Write pending updates to PS and read new w_cache_. It will use either
-  // RefreshParamDense() or RefreshParamSparse().
-  virtual void RefreshParams() = 0;
+  // Write pending updates to PS
+  virtual void push() = 0;
+
+  //Read fresh values from PS
+  virtual void pull() = 0;
 
   // Save the current weight in cache in libsvm format.
   virtual void SaveWeights(const std::string& filename) const = 0;
+
+  // Evaluate L2 regularization term \lambda ||w||^2
+  virtual float EvaluateL2RegLoss() const = 0;
+
 };
 
 }  // namespace mlr

@@ -10,7 +10,9 @@
 DECLARE_int32(num_train_data);
 DECLARE_string(train_file);
 DECLARE_bool(global_data);
+DECLARE_bool(force_global_file_names);
 DECLARE_string(test_file);
+DECLARE_int32(num_test_data);
 DECLARE_int32(num_train_eval);
 DECLARE_int32(num_test_eval);
 DECLARE_bool(perform_test);
@@ -24,6 +26,7 @@ DECLARE_double(decay_rate);
 DECLARE_int32(num_epochs_per_eval);
 DECLARE_bool(sparse_weight);
 DECLARE_double(lambda);
+DECLARE_bool(add_immediately);
 
 DECLARE_string(output_file_prefix);
 DECLARE_int32(num_secs_per_checkpoint);
@@ -42,7 +45,8 @@ const int32_t kColIdxLossTableNumEvalTrain = 4;    // # train point eval
 const int32_t kColIdxLossTableTestZeroOneLoss = 5;
 const int32_t kColIdxLossTableNumEvalTest = 6;  // # test point eval.
 const int32_t kColIdxLossTableTime = 7;
+const int32_t kColIdxLossTableRegLoss = 8;    // reg loss (with lambda)
 
-const int32_t kNumColumnsLossTable = 8;
+const int32_t kNumColumnsLossTable = 9;
 
 }  // namespace mlr

@@ -5,6 +5,7 @@
 #include "mlr_sgd_solver.hpp"
 #include "lr_sgd_solver.hpp"
 #include "abstract_mlr_sgd_solver.hpp"
+#include "mlr_dataParsers.hpp"
 #include "common.hpp"
 #include <string>
 #include <cmath>
@@ -14,6 +15,12 @@
 #include <ml/include/ml.hpp>
 #include <cstdint>
 #include <fstream>
+#include "gstd/src/Vector.h"
+#include "gstd/src/Printer.h"
+#include "gstd/src/ex.h"
+#include "gstd/src/Timer.h"
+
+using namespace msii810161816;
 
 #include <petuum_ps_common/include/petuum_ps.hpp>
 #include <petuum_ps_common/include/system_gflags_declare.hpp>
@@ -23,25 +30,22 @@ namespace mlr {
 
 namespace {
 
-// Save MLRSGDSolver::w_cache_ to disk. Could be time consuming if w is large.
+// Save weight matrix
 void SaveWeights(AbstractMLRSGDSolver* mlr_solver) {
-  // Save weights.
   CHECK(!FLAGS_output_file_prefix.empty());
   std::string output_filename = FLAGS_output_file_prefix + ".weight";
   mlr_solver->SaveWeights(output_filename);
 }
 
-}  // anonymous namespace
+}  
 
+//constructor: initialize process-global values
 MLREngine::MLREngine() : thread_counter_(0) {
   perform_test_ = FLAGS_perform_test;
   num_train_eval_ = FLAGS_num_train_eval;
   process_barrier_.reset(new boost::barrier(FLAGS_num_table_threads));
-
-  // Apepnd client_id if the train_data isn't global.
-  std::string meta_file = FLAGS_train_file
-    + (FLAGS_global_data ? "" : "." + std::to_string(FLAGS_client_id))
-    + ".meta";
+  std::string meta_file = FLAGS_train_file + ((FLAGS_global_data || FLAGS_force_global_file_names) ? "" : "." + std::to_string(FLAGS_client_id)) + ".meta";
+  w_table_num_cols_ = FLAGS_w_table_num_cols;
   petuum::ml::MetafileReader mreader(meta_file);
   num_train_data_ = mreader.get_int32("num_train_this_partition");
   if (FLAGS_num_train_data != 0) {
@@ -53,12 +57,15 @@ MLREngine::MLREngine() : thread_counter_(0) {
   feature_one_based_ = mreader.get_bool("feature_one_based");
   label_one_based_ = mreader.get_bool("label_one_based");
   snappy_compressed_ = mreader.get_bool("snappy_compressed");
-
-  // Read test meta file.
+  if(read_format_ == "custom_imnet")
+    file_size_ = mreader.get_int32("file_size");
   if (perform_test_) {
     std::string test_meta_file = FLAGS_test_file + ".meta";
     petuum::ml::MetafileReader mreader_test(test_meta_file);
     num_test_data_ = mreader_test.get_int32("num_test");
+    if (FLAGS_num_test_data != 0) {
+      num_test_data_ = std::min(num_test_data_, FLAGS_num_test_data);
+    }
     CHECK_EQ(feature_dim_, mreader_test.get_int32("feature_dim"));
     CHECK_EQ(num_labels_, mreader_test.get_int32("num_labels"));
     CHECK_EQ(read_format_, mreader_test.get_string("format"));
@@ -67,6 +74,7 @@ MLREngine::MLREngine() : thread_counter_(0) {
   }
 }
 
+//destructor
 MLREngine::~MLREngine() {
   for (auto p : train_features_) {
     delete p;
@@ -76,9 +84,10 @@ MLREngine::~MLREngine() {
   }
 }
 
+//loading data
 void MLREngine::ReadData() {
   std::string train_file = FLAGS_train_file
-    + (FLAGS_global_data ? "" : "." + std::to_string(FLAGS_client_id));
+    + ((FLAGS_global_data || FLAGS_force_global_file_names) ? "" : "." + std::to_string(FLAGS_client_id));
   LOG(INFO) << "Reading train file: " << train_file;
   if (read_format_ == "bin") {
     petuum::ml::ReadDataLabelBinary(train_file, feature_dim_, num_train_data_,
@@ -108,16 +117,27 @@ void MLREngine::ReadData() {
           num_test_data_, &test_features_, &test_labels_,
           feature_one_based_, label_one_based_, snappy_compressed_);
     }
-  }
+   } else if(read_format_ == "custom_imnet")
+	{
+		mlrDataParsers::custom_imnet(train_file, file_size_, num_train_data_, 0,
+        &train_features_, &train_labels_);
+	if(perform_test_) {
+		LOG(INFO) << "Reading test file: " << FLAGS_test_file;
+      mlrDataParsers::custom_imnet(FLAGS_test_file, file_size_,
+          num_test_data_, num_train_data_, &test_features_, &test_labels_);
+    }
+   } else CHECK(false);
+
 }
 
+
+//if we want to start with a weight file, this function facilitates this
 void MLREngine::InitWeights(const std::string& weight_file) {
   petuum::HighResolutionTimer weight_init_timer;
   std::ifstream weight_stream(weight_file);
   CHECK(weight_stream) << "Failed to open " << weight_file;
   LOG(INFO) << "Loading weights from " << weight_file;
 
-  // Check that num_labels and feature_dim match.
   std::string field_name;
   int32_t num_labels_weightfile;
   weight_stream >> field_name >> num_labels_weightfile;
@@ -129,7 +149,6 @@ void MLREngine::InitWeights(const std::string& weight_file) {
   CHECK_EQ("feature_dim:", field_name);
   CHECK_EQ(feature_dim_, feature_dim_weightfile);
 
-  // Now read the weights and put them in w_table.
   for (int i = 0; i < num_labels_; ++i) {
     petuum::UpdateBatch<float> w_update_batch(feature_dim_);
     for (int d = 0; d < feature_dim_; ++d) {
@@ -148,12 +167,13 @@ void MLREngine::InitWeights(const std::string& weight_file) {
     << weight_init_timer.elapsed();
 }
 
+//this is run thread-wise
 void MLREngine::Start() {
+  //register thread
   petuum::PSTableGroup::RegisterThread();
 
-  // Initialize local thread data structures.
+  // Initialize some more values: why are these initialized locally and some are initialized as member vars in the constructor??? (I get it for thread_id ...)
   int thread_id = thread_counter_++;
-
   int client_id = FLAGS_client_id;
   int num_clients = FLAGS_num_clients;
   int num_threads = FLAGS_num_table_threads;
@@ -161,40 +181,40 @@ void MLREngine::Start() {
   int num_batches_per_epoch = FLAGS_num_batches_per_epoch;
   int num_secs_per_checkpoint = FLAGS_num_secs_per_checkpoint;
   int loss_table_staleness = FLAGS_table_staleness;
-  float learning_rate = FLAGS_learning_rate;
+  float learning_rate = FLAGS_learning_rate / FLAGS_num_train_data;
   int num_epochs_per_eval = FLAGS_num_epochs_per_eval;
   bool global_data = FLAGS_global_data;
   int num_test_eval = FLAGS_num_test_eval;
-
-  std::vector<float> predict_buff(num_labels_);
-
   if (num_test_eval == 0) {
     num_test_eval = num_test_data_;
   }
 
+  //initialize tables
   if (thread_id == 0) {
     loss_table_ =
       petuum::PSTableGroup::GetTableOrDie<float>(kLossTableID);
     w_table_ =
       petuum::PSTableGroup::GetTableOrDie<float>(kWTableID);
-
-    for (int i = 0; i < num_labels_; ++i) {
+    int num_w_table_rows = num_labels_;
+    if(num_labels_ == 2)
+      num_w_table_rows = std::ceil(static_cast<float>(feature_dim_) / w_table_num_cols_);  
+    for (int i = 0; i < num_w_table_rows; ++i) {
       w_table_.GetAsyncForced(i);
     }
     w_table_.WaitPendingAsyncGet();
     LOG(INFO) << "Bootstrap done!";
   }
-  // Barrier to ensure w_table_ and loss_table_ is initialized.
   process_barrier_->wait();
 
+  //initialize weights if needed
   if (FLAGS_use_weight_file) {
     if (client_id == 0 && thread_id == 0) {
       InitWeights(FLAGS_weight_file);
     }
-    // Barrier to ensure weights are initialized from the existing weight.
     petuum::PSTableGroup::GlobalBarrier();
   }
 
+  //initialize the solver
   std::unique_ptr<AbstractMLRSGDSolver> mlr_solver;
   if (num_labels_ == 2) {
     // Create LR sgd solver.
@@ -217,8 +237,11 @@ void MLREngine::Start() {
     solver_config.w_table = w_table_;
     mlr_solver.reset(new MLRSGDSolver(solver_config));
   }
-  mlr_solver->RefreshParams();
+  mlr_solver->push();
+  mlr_solver->pull();
+  petuum::PSTableGroup::GlobalBarrier();
 
+  //create schedule
   petuum::HighResolutionTimer total_timer;
   petuum::ml::WorkloadManagerConfig workload_mgr_config;
   workload_mgr_config.thread_id = thread_id;
@@ -229,12 +252,8 @@ void MLREngine::Start() {
   workload_mgr_config.num_data = num_train_data_;
   workload_mgr_config.global_data = global_data;
   petuum::ml::WorkloadManager workload_mgr(workload_mgr_config);
-  // For training error.
   petuum::ml::WorkloadManager workload_mgr_train_error(workload_mgr_config);
-
-  LOG_IF(INFO, client_id == 0 && thread_id == 0)
-    << "Batch size: " << workload_mgr.GetBatchSize();
-
+  LOG_IF(INFO, client_id == 0 && thread_id == 0) << "Batch size: " << workload_mgr.GetBatchSize();
   petuum::ml::WorkloadManagerConfig test_workload_mgr_config;
   test_workload_mgr_config.thread_id = thread_id;
   test_workload_mgr_config.client_id = client_id;
@@ -243,20 +262,24 @@ void MLREngine::Start() {
   test_workload_mgr_config.num_batches_per_epoch = 1;
   // Need to set num_data to non-zero to avoid problem in WorkloadManager.
   test_workload_mgr_config.num_data = perform_test_ ? num_test_data_ : 10000;
-  // test set is always globa (duplicated on all clients).
-  test_workload_mgr_config.global_data = true;
+  // test set is always global (duplicated on all clients) except in custom_imnet format
+  test_workload_mgr_config.global_data = (read_format_ == "custom_imnet")  ? false : true;
   petuum::ml::WorkloadManager test_workload_mgr(test_workload_mgr_config);
 
-  // It's reset after every check-pointing (saving to disk).
+  // Start checkpoint timer: It's reset after every check-pointing (saving to disk).
   petuum::HighResolutionTimer checkpoint_timer;
 
+  //initialize the model
   float decay_rate = FLAGS_decay_rate;
   int32_t eval_counter = 0;
   int32_t batch_counter = 0;
   STATS_APP_ACCUM_COMP_BEGIN();
-
+  
+  //begin algorithm
   petuum::PSTableGroup::TurnOnEarlyComm();
   for (int epoch = 0; epoch < num_epochs; ++epoch) {
+
+    //one training epoch:
     float curr_learning_rate = learning_rate * pow(decay_rate, epoch);
     workload_mgr.Restart();
     while (!workload_mgr.IsEnd()) {
@@ -267,23 +290,32 @@ void MLREngine::Start() {
               train_features_[data_idx])),
           train_labels_[data_idx], curr_learning_rate);
           */
-
       mlr_solver->SingleDataSGD(
         *train_features_[data_idx],
         train_labels_[data_idx], curr_learning_rate);
 
       if (workload_mgr.IsEndOfBatch()) {
         STATS_APP_ACCUM_COMP_END();
-        mlr_solver->RefreshParams();
+        mlr_solver->push();
+        if(!workload_mgr.IsEnd())
+	{
+          mlr_solver->pull();
+        }
         STATS_APP_ACCUM_COMP_BEGIN();
         ++batch_counter;
         //if (client_id == 0 && thread_id == 0)
         //  LOG(INFO) << "batch: " << batch_counter;
       }
     }
+
     CHECK_EQ(0, batch_counter % num_batches_per_epoch);
     petuum::PSTableGroup::Clock();
-
+    STATS_APP_ACCUM_COMP_END();
+    mlr_solver->pull();
+    STATS_APP_ACCUM_COMP_BEGIN();
+    
+    //one error eval
+    std::vector<float> predict_buff(num_labels_);
     if (epoch % num_epochs_per_eval == 0) {
       petuum::HighResolutionTimer eval_timer;
       ComputeTrainError(mlr_solver.get(), &workload_mgr_train_error,
@@ -293,10 +325,11 @@ void MLREngine::Start() {
                          num_test_eval, eval_counter, &predict_buff);
       }
       if (client_id == 0 && thread_id == 0) {
-        petuum::UpdateBatch<float> update_batch(3);
+        petuum::UpdateBatch<float> update_batch(4);
         update_batch.UpdateSet(0, kColIdxLossTableEpoch, epoch + 1);
         update_batch.UpdateSet(1, kColIdxLossTableBatch, batch_counter);
         update_batch.UpdateSet(2, kColIdxLossTableTime, total_timer.elapsed());
+        update_batch.UpdateSet(3, kColIdxLossTableRegLoss, mlr_solver->EvaluateL2RegLoss());
         loss_table_.BatchInc(eval_counter, update_batch);
 
         if (eval_counter > loss_table_staleness) {
@@ -322,6 +355,7 @@ void MLREngine::Start() {
   STATS_APP_ACCUM_COMP_END();
   petuum::PSTableGroup::GlobalBarrier();
   // Use all the train data in the last training error eval.
+  std::vector<float> predict_buff(num_labels_);
   ComputeTrainError(mlr_solver.get(), &workload_mgr_train_error,
                     num_train_data_, eval_counter, &predict_buff);
   if (perform_test_) {
@@ -336,6 +370,8 @@ void MLREngine::Start() {
         batch_counter);
     loss_table_.Inc(eval_counter, kColIdxLossTableTime,
         total_timer.elapsed());
+    loss_table_.Inc(eval_counter, kColIdxLossTableRegLoss,
+        mlr_solver->EvaluateL2RegLoss());
     LOG(INFO) << std::endl << PrintAllEval(eval_counter);
     LOG(INFO) << "Final eval: " << PrintOneEval(eval_counter);
     SaveLoss(eval_counter);
@@ -344,6 +380,7 @@ void MLREngine::Start() {
   petuum::PSTableGroup::DeregisterThread();
 }
 
+//compute train error and push it to the loss table
 void MLREngine::ComputeTrainError(
     AbstractMLRSGDSolver* mlr_solver,
     petuum::ml::WorkloadManager* workload_mgr, int32_t num_data_to_use,
@@ -370,7 +407,7 @@ void MLREngine::ComputeTrainError(
       static_cast<float>(num_total));
 }
 
-
+// compute test error and push it to the loss table
 void MLREngine::ComputeTestError(
     AbstractMLRSGDSolver* mlr_solver,
     petuum::ml::WorkloadManager* test_workload_mgr,
@@ -393,6 +430,7 @@ void MLREngine::ComputeTestError(
       static_cast<float>(num_total));
 }
 
+//generate string for intermediate error report
 std::string MLREngine::PrintOneEval(int32_t ith_eval) {
   std::stringstream output;
   petuum::RowAccessor row_acc;
@@ -415,19 +453,24 @@ std::string MLREngine::PrintOneEval(int32_t ith_eval) {
     loss_row[kColIdxLossTableNumEvalTrain] << " "
     << "train-entropy: " << loss_row[kColIdxLossTableEntropyLoss] /
     loss_row[kColIdxLossTableNumEvalTrain] << " "
+    << "train-obj: " << loss_row[kColIdxLossTableEntropyLoss] /
+    loss_row[kColIdxLossTableNumEvalTrain]
+    + loss_row[kColIdxLossTableRegLoss] << " "
     << "num-train-used: " << loss_row[kColIdxLossTableNumEvalTrain] << " "
     << test_info << " "
     << "time: " << loss_row[kColIdxLossTableTime] << std::endl;
   return output.str();
 }
 
+
+//generate string for final error report
 std::string MLREngine::PrintAllEval(int32_t up_to_ith_eval) {
   std::stringstream output;
   if (perform_test_) {
-    output << "Epoch Batch Train-0-1 Train-Entropy Num-Train-Used Test-0-1 "
+    output << "Epoch Batch Train-0-1 Train-Entropy Train-obj Num-Train-Used Test-0-1 "
       << "Num-Test-Used Time" << std::endl;
   } else {
-    output << "Epoch Batch Train-0-1 Train-Entropy Num-Train-Used "
+    output << "Epoch Batch Train-0-1 Train-Entropy Train-obj Num-Train-Used "
       << "Time" << std::endl;
   }
   for (int i = 0; i <= up_to_ith_eval; ++i) {
@@ -450,6 +493,9 @@ std::string MLREngine::PrintAllEval(int32_t up_to_ith_eval) {
       loss_row[kColIdxLossTableNumEvalTrain] << " "
       << loss_row[kColIdxLossTableEntropyLoss] /
       loss_row[kColIdxLossTableNumEvalTrain] << " "
+      << loss_row[kColIdxLossTableEntropyLoss] /
+      loss_row[kColIdxLossTableNumEvalTrain]
+      + loss_row[kColIdxLossTableRegLoss] << " "
       << loss_row[kColIdxLossTableNumEvalTrain] << " "
       << test_info << " "
       << loss_row[kColIdxLossTableTime] << std::endl;
@@ -480,6 +526,7 @@ std::string MLREngine::GetExperimentInfo() const {
     << "num_batches_per_epoch: " << FLAGS_num_batches_per_epoch << std::endl
     << "learning_rate: " << FLAGS_learning_rate << std::endl
     << "decay_rate: " << FLAGS_decay_rate << std::endl
+    << "lambda: " << FLAGS_lambda << std::endl
     << "num_epochs_per_eval: " << FLAGS_num_epochs_per_eval << std::endl
     << "use_weight_file: " << FLAGS_use_weight_file << std::endl
     << (FLAGS_use_weight_file ? FLAGS_weight_file + "\n" : "")

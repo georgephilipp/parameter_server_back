@@ -59,7 +59,17 @@ MLRSGDSolver::~MLRSGDSolver() {
   }
 }
 
-void MLRSGDSolver::RefreshParams() {
+
+/////////////////////////////////
+// INCOMPLETE
+/////////////////////////////////
+void MLRSGDSolver::push()
+{
+  RefreshParamFun_(*this);
+}
+
+void MLRSGDSolver::pull()
+{
   RefreshParamFun_(*this);
 }
 
@@ -209,6 +219,10 @@ void MLRSGDSolver::SaveWeights(const std::string& filename) const {
   }
   w_stream.close();
   LOG(INFO) << "Saved weight to " << filename;
+}
+
+float MLRSGDSolver::EvaluateL2RegLoss() const {
+  return 0;
 }
 
 }  // namespace mlr

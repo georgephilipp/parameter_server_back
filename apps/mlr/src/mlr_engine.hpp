@@ -73,6 +73,10 @@ private:
   bool feature_one_based_;  // feature starts from 1 (train and test).
   bool label_one_based_;    // label starts from 1 (train and test).
   bool snappy_compressed_;  // file is compressed with snappy.
+  int file_size_;
+
+  //table row size
+  int32_t w_table_num_cols_;
 
   // DNNEngine takes ownership of these pointers.
   std::vector<petuum::ml::AbstractFeature<float>*> train_features_;

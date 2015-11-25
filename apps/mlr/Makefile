@@ -12,19 +12,19 @@ NDEBUG = -DNDEBUG
 
 all: mlr $(MLR_BIN)/gen_data_sparse
 process_data: $(MLR_BIN)/process_data
-mlr: $(MLR_BIN)/mlr_main
+mlr: $(MLR_DIR)/mlr_main
 
 
 $(MLR_BIN):
 	mkdir -p $(MLR_BIN)
 
-$(MLR_BIN)/mlr_main: $(MLR_OBJ) $(PETUUM_PS_LIB) $(PETUUM_ML_LIB) $(MLR_BIN)
+$(MLR_DIR)/mlr_main: $(MLR_OBJ) $(PETUUM_PS_LIB) $(PETUUM_ML_LIB) $(MLR_BIN)
 	$(PETUUM_CXX) $(PETUUM_CXXFLAGS) $(PETUUM_INCFLAGS) \
-	$(MLR_OBJ) $(PETUUM_PS_LIB) $(PETUUM_ML_LIB) $(PETUUM_LDFLAGS) -o $@
+	$(MLR_OBJ) $(PETUUM_PS_LIB) $(PETUUM_ML_LIB) $(PETUUM_LDFLAGS) -L. -Wl,-rpath,$(MLR_DIR) -lgstd -o $@
 
 $(MLR_OBJ): %.o: %.cpp $(MLR_HDR)
 	$(PETUUM_CXX) $(NDEBUG) $(PETUUM_CXXFLAGS) -Wno-unused-result \
-		$(PETUUM_INCFLAGS) -c $< -o $@
+		$(PETUUM_INCFLAGS) -I. -c $< -o $@
 
 $(MLR_TOOLS)/string_buffer.o: $(MLR_TOOLS)/string_buffer.cpp \
 	$(MLR_TOOLS)/string_buffer.hpp
@@ -48,6 +48,6 @@ $(MLR_BIN)/process_data: $(MLR_DIR)/src/tools/process_data.cpp $(MLR_BIN)
 
 clean:
 	rm -rf $(MLR_OBJ)
-	rm -rf $(MLR_BIN)
+	rm $(MLR_DIR)/mlr_main
 
 .PHONY: clean, process_data

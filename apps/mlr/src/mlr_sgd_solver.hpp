@@ -47,12 +47,17 @@ public:
   float CrossEntropyLoss(const std::vector<float>& prediction, int32_t label)
     const;
 
-  // Write pending updates to PS and read new w_cache_. It will use either
-  // RefreshParamDense() or RefreshParamSparse().
-  void RefreshParams();
+  // Write pending updates to PS
+  void push();
+
+  //Read fresh values from PS
+  void pull();
 
   // Save the current weight in cache in libsvm format.
   void SaveWeights(const std::string& filename) const;
+
+  //Evaluate the regularization penalty of the parameter vector
+  float EvaluateL2RegLoss() const;
 
 private:    // private functions
   void RefreshParamsDense();

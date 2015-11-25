@@ -10,13 +10,18 @@
 #include <petuum_ps_common/include/petuum_ps.hpp>
 #include <ml/include/ml.hpp>
 #include <ml/util/fastapprox/fastapprox.hpp>
+#include "gstd/src/Vector.h"
+#include "gstd/src/Printer.h"
+#include "gstd/src/ex.h"
 
+using namespace msii810161816;
 // DW: remove
 #include <sstream>
 
 
 namespace mlr {
 
+//constructor
 LRSGDSolver::LRSGDSolver(const LRSGDSolverConfig& config) :
   w_table_(config.w_table),
   w_cache_(config.feature_dim),
@@ -35,6 +40,7 @@ LRSGDSolver::LRSGDSolver(const LRSGDSolverConfig& config) :
 
 LRSGDSolver::~LRSGDSolver() { }
 
+//calculates a single update: applies it to thread cache and thread delta
 void LRSGDSolver::SingleDataSGD(const petuum::ml::AbstractFeature<float>& feature,
     int32_t label, float learning_rate) {
   Predict(feature, &predict_buff_);
@@ -42,35 +48,41 @@ void LRSGDSolver::SingleDataSGD(const petuum::ml::AbstractFeature<float>& featur
   // Apply gradient to w_delta_. This must happen first as w_cache_ would
   // change after gradient application and weight decay uses gradient values.
   petuum::ml::FeatureScaleAndAdd(-learning_rate * (predict_buff_[1] - label), feature,
-      &w_delta_);
+    &w_delta_);
   if (lambda_ > 0) {
     petuum::ml::FeatureScaleAndAdd(-learning_rate * lambda_, w_cache_,
-        &w_delta_);
+    &w_delta_);
   }
 
   // Apply gradient to w_cache_
-  if (lambda_ > 0) {
-    petuum::ml::FeatureScaleAndAdd(-learning_rate * lambda_, w_cache_,
+  if(FLAGS_add_immediately) 
+  {
+    if (lambda_ > 0) {
+      petuum::ml::FeatureScaleAndAdd(-learning_rate * lambda_, w_cache_,
+          &w_cache_);
+    }
+    petuum::ml::FeatureScaleAndAdd(-learning_rate * (predict_buff_[1] - label), feature,
         &w_cache_);
   }
-  petuum::ml::FeatureScaleAndAdd(-learning_rate * (predict_buff_[1] - label), feature,
-      &w_cache_);
 }
 
+//predict based on thread cache
 void LRSGDSolver::Predict(
     const petuum::ml::AbstractFeature<float>& feature,
     std::vector<float> *result) const {
   std::vector<float> &y_vec = *result;
   // fastsigmoid is numerically unstable for input <-88.
-  y_vec[0] = petuum::ml::Sigmoid(FeatureDotProductFun_(feature, w_cache_));
+  y_vec[0] = 1 - petuum::ml::Sigmoid(FeatureDotProductFun_(feature, w_cache_));
   y_vec[1] = 1 - y_vec[0];
 }
 
+//zerooneloss: trivial
 int32_t LRSGDSolver::ZeroOneLoss(const std::vector<float>& prediction, int32_t label)
   const {
     return prediction[label] >= 0.5 ? 0 : 1;
   }
 
+//XEntropy Loss: trivial
 float LRSGDSolver::CrossEntropyLoss(const std::vector<float>& prediction, int32_t label)
   const {
     CHECK_LE(prediction[label], 1);
@@ -78,7 +90,8 @@ float LRSGDSolver::CrossEntropyLoss(const std::vector<float>& prediction, int32_
     return -petuum::ml::SafeLog(prediction[label]);
   }
 
-void LRSGDSolver::RefreshParams() {
+//inc and get: from and to thread cache
+void LRSGDSolver::push() {
   // Write delta's to PS table.
   int num_full_rows = feature_dim_ / w_table_num_cols_;
   for (int i = 0; i < num_full_rows; ++i) {
@@ -87,7 +100,7 @@ void LRSGDSolver::RefreshParams() {
       int idx = i * w_table_num_cols_ + j;
       CHECK_EQ(w_delta_[idx], w_delta_[idx]) << "nan detected.";
       w_update_batch[j] = w_delta_[idx];
-    }
+    }  
     w_table_.DenseBatchInc(i, w_update_batch);
   }
 
@@ -108,8 +121,11 @@ void LRSGDSolver::RefreshParams() {
   std::fill(w_delta_vec.begin(), w_delta_vec.end(), 0);
 
   //petuum::PSTableGroup::Clock();
+}
 
+void LRSGDSolver::pull() {
   // Read w from the PS.
+  int num_full_rows = feature_dim_ / w_table_num_cols_;
   std::vector<float>& w_cache_vec = w_cache_.GetVector();
   std::vector<float> w_cache(w_table_num_cols_);
   for (int i = 0; i < num_full_rows; ++i) {
@@ -134,5 +150,15 @@ void LRSGDSolver::RefreshParams() {
 void LRSGDSolver::SaveWeights(const std::string& filename) const {
   LOG(ERROR) << "SaveWeights is not implemented for binary LR.";
 }
+
+float LRSGDSolver::EvaluateL2RegLoss() const {
+  double l2_norm = 0.;
+  std::vector<float> w = w_cache_.GetVector();
+  for (int i = 0; i < feature_dim_; ++i) {
+    l2_norm += w[i] * w[i];
+  }
+  return 0.5 * lambda_ * l2_norm;
+}
+
 
 }  // namespace mlr

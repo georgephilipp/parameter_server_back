@@ -1,0 +1,142 @@
+# Table Group Configuration
+num_comm_channels_per_client: 1
+num_tables: 2
+num_total_clients: 1
+num_local_app_threads: 5
+client_id: 0
+aggressive_clock: false
+consistency_model: 1
+aggressive_cpu: 0
+---
+# Application Statistics
+app_thread_life_sec: [0.8398574090000001, 0.839954061, 0.842992569, 0.844361029, 0.84745196]
+app_load_data_sec: []
+app_init_sec: []
+app_bootstrap_sec: []
+app_accum_comp_sec_vec: [0.6506928110000001, 0.5513484160000001, 0.7919780610000001, 0.718486199]
+app_accum_comm_block_sec: [0.160406794, 0.2630200090000001, 0.017144444, 0.097347435, 0]
+"app_defined:": [0, 0, 0, 0, 0]
+"app_defined:": 0
+total_comp_thread: 4
+app_accum_comp_sec: 2.712505487
+app_sum_accum_comm_block_sec: 0.537918682
+app_sum_accum_comm_block_sec_percent: 0.1983106336846278
+app_sum_approx_ssp_get_hit_sec: 0
+app_sum_approx_ssp_get_hit_sec_percent: 0
+app_sum_approx_inc_sec: 0.00197316
+app_sum_approx_inc_sec_percent: 0.0007274307865759536
+app_sum_approx_batch_inc_sec: 0.4550435000000001
+app_sum_approx_batch_inc_sec_percent: 0.1677576330005043
+app_sum_approx_batch_inc_oplog_sec: 0.35638586
+app_sum_approx_batch_inc_oplog_sec_percent: 0.1313862263903321
+app_sum_approx_batch_inc_process_storage_sec: 0.06110408
+app_sum_approx_batch_inc_process_storage_sec_percent: 0.02252680420107847
+app_accum_tg_clock_sec: 0.0008264990000000001
+app_accum_tg_clock_sec_percent: 0.0003046994758023876
+ps_overall_overhead: 0.3671003969475105
+app_accum_append_only_flush_oplog_sec: [0, 0, 0, 0, 0]
+app_accum_append_only_flush_oplog_count: [0, 0, 0, 0, 0]
+---
+# Table.0
+num_get: 20400
+num_ssp_get_hit: 20400
+num_ssp_get_miss: 0
+num_ssp_get_hit_sampled: 0
+num_ssp_get_miss_sampled: 0
+accum_sample_ssp_get_hit_sec: 0
+accum_sample_ssp_get_miss_sec: 0
+num_ssppush_get_comm_block: 40
+accum_sspppush_get_comm_block_sec: 0.536023518
+accum_ssp_get_server_fetch_sec: 0
+num_inc: 0
+num_inc_sampled: 0
+accum_sample_inc_sec: 0
+num_batch_inc: 20400
+num_batch_inc_sampled: 4
+accum_sample_batch_inc_sec: 8.922000000000002e-05
+num_clock: 52
+accum_sample_clock_sec: 0.00056447
+num_thread_get: 0
+accum_sample_thread_get_sec: 0
+---
+# Table.1
+num_get: 32
+num_ssp_get_hit: 21
+num_ssp_get_miss: 11
+num_ssp_get_hit_sampled: 0
+num_ssp_get_miss_sampled: 0
+accum_sample_ssp_get_hit_sec: 0
+accum_sample_ssp_get_miss_sec: 0
+num_ssppush_get_comm_block: 1
+accum_sspppush_get_comm_block_sec: 0.000742332
+accum_ssp_get_server_fetch_sec: 0.001152832
+num_inc: 224
+num_inc_sampled: 4
+accum_sample_inc_sec: 3.5235e-05
+num_batch_inc: 10
+num_batch_inc_sampled: 1
+accum_sample_batch_inc_sec: 2.15e-06
+num_clock: 52
+accum_sample_clock_sec: 5.613600000000001e-05
+num_thread_get: 0
+accum_sample_thread_get_sec: 0
+---
+# BgThread Stats
+bg_accum_clock_end_oplog_serialize_sec: 0.011510929
+bg_accum_total_oplog_serialize_sec: 0.011510929
+bg_accum_server_push_row_apply_sec: 0.0003805460000000001
+bg_accum_oplog_sent_mb: 2.103592872619629
+bg_accum_server_push_row_recv_mb: 2.111741065979004
+bg_per_clock_oplog_sent_mb: [0.1911745071411133, 0.1911745071411133, 0.191227912902832, 0.191227912902832, 0.191227912902832, 0.191227912902832, 0.191227912902832, 0.191227912902832, 0.191227912902832, 0.191227912902832, 0.191227912902832, 9.632110595703125e-05, 9.632110595703125e-05, 0]
+bg_per_clock_server_push_row_recv_mb: [0, 0.191929817199707, 0.191929817199707, 0.191929817199707, 0.1919755935668945, 0.1919755935668945, 0.1919755935668945, 0.1919755935668945, 0.1919755935668945, 0.1919755935668945, 0.1919755935668945, 0.1919755935668945, 9.632110595703125e-05, 5.054473876953125e-05]
+bg_accum_server_push_oplog_row_applied: [0]
+bg_accum_server_push_update_applied: [0]
+bg_accum_server_push_version_diff: [0]
+bg_sample_process_cache_insert_sec: [1.562e-06]
+bg_num_process_cache_insert: [1109]
+bg_num_process_cache_insert_sampled: [1]
+bg_sample_server_push_deserialize_sec: [0]
+bg_num_server_push_deserialize: [0]
+bg_num_server_push_deserialize_sampled: [0]
+bg_accum_num_idle_invoke: [0]
+bg_accum_num_idle_send: [0]
+bg_accum_num_push_row_msg_recv: [13]
+bg_accum_idle_send_sec: [0]
+bg_accum_idle_send_bytes_mb: [0]
+bg_accum_handle_append_oplog_sec: [0]
+bg_num_append_oplog_buff_handled: [0]
+bg_num_row_oplog_created: [0]
+bg_num_row_oplog_recycled: [0]
+bg_table_accum_importance:
+  {}
+bg_accum_num_rows_sent:
+  {}
+bg_accum_num_waits_on_ack_idle: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+bg_accum_num_waits_on_ack_clock: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+bg_table_oplog_read_stats:
+  {}
+---
+# ServerThread Stats
+server_accum_apply_oplog_sec: 0.002297992
+server_accum_total_serialize_push_row_sec: 0.0009575720000000001
+server_accum_oplog_recv_mb: 2.103592872619629
+server_accum_push_row_mb: 2.111741065979004
+server_per_clock_oplog_recv_mb: [0.1911745071411133, 0.1911745071411133, 0.191227912902832, 0.191227912902832, 0.191227912902832, 0.191227912902832, 0.191227912902832, 0.191227912902832, 0.191227912902832, 0.191227912902832, 0.191227912902832, 9.632110595703125e-05, 9.632110595703125e-05, 0]
+server_per_clock_push_row_mb: [0.191929817199707, 0.191929817199707, 0.191929817199707, 0.1919755935668945, 0.1919755935668945, 0.1919755935668945, 0.1919755935668945, 0.1919755935668945, 0.1919755935668945, 0.1919755935668945, 0.1919755935668945, 9.632110595703125e-05, 5.054473876953125e-05, 0]
+server_per_clock_accum_dup_rows_sent: [5050, 5050, 5050, 5051, 5051, 5051, 5051, 5051, 5051, 5051, 5051, 1, 0, 0]
+server_accum_num_oplog_msg_recv: [13]
+server_accum_num_push_row_msg_send: [13]
+server_accum_num_idle_invoke: [0]
+server_accum_num_idle_send: [0]
+server_accum_idle_send_sec: [0]
+server_accum_idle_send_bytes_mb: [0]
+server_table_accum_importance:
+  1: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  0: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+server_accum_num_rows_sent:
+  1: [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0]
+  0: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 0, 0, 0]
+server_accum_num_waits_on_ack_idle: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+server_accum_num_waits_on_ack_clock: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+server_table_logic:
+  {}
