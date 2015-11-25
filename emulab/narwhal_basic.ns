@@ -1,0 +1,16 @@
+#This is a basic narwhal ns using vanilla ubuntu image
+
+set ns [new Simulator]
+source tb_compat.tcl
+
+#node1
+set node1 [$ns node]
+# this tells emulab what node class to use
+node1 add-desire rr 1.0
+# the node OS can be set using text or using variables defined above
+#UBUNTU14-64-PROBE is the default OS.  This is here for illustration:
+
+tb-set-node-os node1 UBUNTU14-64-PROBE
+
+$ns rtproto Static
+$ns run
