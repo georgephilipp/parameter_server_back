@@ -484,7 +484,7 @@ std::string MLREngine::PrintAllEval(int32_t up_to_ith_eval) {
             loss_row[kColIdxLossTableNumEvalTest]);
       std::string num_test_str =
         std::to_string(static_cast<int>(loss_row[kColIdxLossTableNumEvalTest]));
-      test_info += test_zero_one_str + " " + num_test_str;
+      test_info += test_zero_one_str + " " + num_test_str + " ";
     }
     CHECK_LT(0, static_cast<int>(loss_row[kColIdxLossTableNumEvalTrain]));
     output << loss_row[kColIdxLossTableEpoch] << " "
@@ -497,7 +497,7 @@ std::string MLREngine::PrintAllEval(int32_t up_to_ith_eval) {
       loss_row[kColIdxLossTableNumEvalTrain]
       + loss_row[kColIdxLossTableRegLoss] << " "
       << loss_row[kColIdxLossTableNumEvalTrain] << " "
-      << test_info << " "
+      << test_info
       << loss_row[kColIdxLossTableTime] << std::endl;
   }
   return output.str();

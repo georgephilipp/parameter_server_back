@@ -272,7 +272,15 @@ std::map<std::string,std::string> readOutFiles(std::function<bool(std::vector<st
 
 	std::vector<std::vector<std::string> > outFile = gstd::Reader::rs<std::string>(FLAGS_output_file_prefix + ".loss", ' ');
 	std::vector<std::string> targetTableHeader = {"Epoch", "Batch", "Train-0-1", "Train-Entropy", "Train-obj", "Num-Train-Used", "Test-0-1", "Num-Test-Used", "Time"};
-	int targetHeaderRow = (int)outFile.size() - 2 - FLAGS_num_epochs;
+	if(!FLAGS_perform_test)
+		targetTableHeader = {"Epoch", "Batch", "Train-0-1", "Train-Entropy", "Train-obj", "Num-Train-Used", "Time"};
+	int targetHeaderRow = 0;
+	for(targetHeaderRow = 0; targetHeaderRow<(int)outFile.size(); targetHeaderRow++)
+	{
+		if(outFile[targetHeaderRow] == targetTableHeader)
+			break;
+	}
+	gstd::check(targetHeaderRow < (int)outFile.size(), "did not find headerrow in outfile. Target table header was:" + gstd::Printer::vp(targetTableHeader));
 	gstd::check(outFile[targetHeaderRow] == targetTableHeader, "outfile reading failed on header row. header row found was " + gstd::Printer::vp(outFile[targetHeaderRow]));
 	int stoppageRowInd = 0;	
 	for(stoppageRowInd=targetHeaderRow+1;stoppageRowInd<(int)outFile.size() - 1;stoppageRowInd++)
@@ -283,13 +291,21 @@ std::map<std::string,std::string> readOutFiles(std::function<bool(std::vector<st
 		}
 	}
 	std::vector<std::string> stoppageRow = outFile[stoppageRowInd];
-	gstd::check(stoppageRow.size() == targetTableHeader.size(), "incorrect size of stoppage row. StoppageRowInd was" + std::to_string(stoppageRowInd) + " Stoppage row was " + gstd::Printer::vp<std::string>(stoppageRow));
+	gstd::check(stoppageRow.size() == targetTableHeader.size(), "incorrect size of stoppage row. StoppageRowInd was" + std::to_string(stoppageRowInd) + " Stoppage row was " + gstd::Printer::vp<std::string>(stoppageRow) + " size of stoppage row was " + gstd::Printer::p(stoppageRow.size()) + " size of header was " + gstd::Printer::p(targetTableHeader.size()));
 	res["epochs"] = stoppageRow[0];
 	res["train01"] = stoppageRow[2];
 	res["trainEntropy"] = stoppageRow[3];
 	res["trainObj"] = stoppageRow[4];
-	res["test01"] = stoppageRow[6];
-	res["time"] = stoppageRow[8];
+	if(FLAGS_perform_test)
+	{
+		res["test01"] = stoppageRow[6];
+		res["time"] = stoppageRow[8];
+	}
+	else
+	{
+		res["time"] = stoppageRow[6];
+		res["test01"] = "-1";
+	}
 
 	double waitPercentage = 0;
 
