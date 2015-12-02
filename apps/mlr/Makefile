@@ -12,11 +12,19 @@ NDEBUG = -DNDEBUG
 
 all: mlr $(MLR_BIN)/gen_data_sparse
 process_data: $(MLR_BIN)/process_data
-mlr: $(MLR_DIR)/mlr_main
+mlr: $(MLR_DIR)/mlr_main $(MLR_DIR)/mlr_multi
 
 
 $(MLR_BIN):
 	mkdir -p $(MLR_BIN)
+
+$(MLR_DIR)/mlr_multi: $(MLR_DIR)/mlr_multi.o $(PETUUM_PS_LIB) $(PETUUM_ML_LIB)
+	$(PETUUM_CXX) $(PETUUM_CXXFLAGS) $(PETUUM_INCFLAGS) \
+	$(MLR_DIR)/mlr_multi.cpp $(PETUUM_PS_LIB) $(PETUUM_ML_LIB) $(PETUUM_LDFLAGS) -L. -Wl,-rpath,$(MLR_DIR) -lgstd -o $@
+
+$(MLR_DIR)/mlr_multi.o: $(MLR_DIR)/mlr_multi.cpp
+	$(PETUUM_CXX) $(NDEBUG) $(PETUUM_CXXFLAGS) -Wno-unused-result \
+		$(PETUUM_INCFLAGS) -I. -c $< -o $@
 
 $(MLR_DIR)/mlr_main: $(MLR_OBJ) $(PETUUM_PS_LIB) $(PETUUM_ML_LIB) $(MLR_BIN)
 	$(PETUUM_CXX) $(PETUUM_CXXFLAGS) $(PETUUM_INCFLAGS) \

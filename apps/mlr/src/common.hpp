@@ -31,6 +31,7 @@ DECLARE_bool(add_immediately);
 DECLARE_string(output_file_prefix);
 DECLARE_int32(num_secs_per_checkpoint);
 DECLARE_int32(w_table_num_cols);
+DECLARE_string(signal_file_path);
 
 const int32_t kWTableID = 0;
 const int32_t kLossTableID = 1;

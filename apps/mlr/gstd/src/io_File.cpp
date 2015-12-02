@@ -218,7 +218,12 @@ namespace msii810161816
 					if (somethingRemains && j + 1 < reps)
 						gstd::Timer::sleep(delay);
 					else
-						return remains;
+					{
+						std::vector<bool> res;
+						for(int k=0;k<size;k++)
+							res.push_back(!remains[k]);
+						return res;
+					}
 				}
 				return std::vector<bool>(size, false);
 			}

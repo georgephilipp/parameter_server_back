@@ -10,7 +10,7 @@
 #include <vector>
 #include <cstdint>
 #include "gstd/src/Rand.h"
-
+#include "gstd/src/Writer.h"
 #include <petuum_ps_common/include/system_gflags_declare.hpp>
 #include <petuum_ps_common/include/table_gflags_declare.hpp>
 #include <petuum_ps_common/include/init_table_config.hpp>
@@ -60,6 +60,7 @@ DEFINE_int32(num_secs_per_checkpoint, 600, "# of seconds between each saving to 
 DEFINE_int32(w_table_num_cols, 100, "# of columns in w_table. Only used for binary LR.");
 // output
 DEFINE_string(output_file_prefix, "", "Results go here.");
+DEFINE_string(signal_file_path, "", "Path to the file used to signal completion");
 
 
 const int32_t kDenseRowFloatTypeID = 0;
@@ -129,6 +130,7 @@ int main(int argc, char *argv[]) {
   table_config.process_cache_capacity = (num_labels == 2) ? std::ceil(static_cast<float>(feature_dim) / FLAGS_w_table_num_cols) : num_labels;
   LOG(INFO) << "feature dim = " << feature_dim;
   LOG(INFO) << "process cache capacity = " << table_config.process_cache_capacity;
+  LOG(INFO) << "num_batches_per_epoch = " << FLAGS_num_batches_per_epoch;
   table_config.oplog_capacity = table_config.process_cache_capacity;
   petuum::PSTableGroup::CreateTable(kWTableID, table_config);
   // loss table.
@@ -153,6 +155,8 @@ int main(int argc, char *argv[]) {
     thr.join();
   }
   petuum::PSTableGroup::ShutDown();
+  if(FLAGS_signal_file_path != "")
+    gstd::Writer::w(FLAGS_signal_file_path, "done", true);
   LOG(INFO) << "MLR finished and shut down!";
 
 

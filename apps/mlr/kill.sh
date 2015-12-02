@@ -72,6 +72,7 @@ script_path=`readlink -f $0`
 script_dir=`dirname $script_path`
 app_dir=`dirname $script_dir`
 progname=mlr_main
+multiname=mlr_multi
 prog_path=$app_dir/mlr/${progname}
 host_file=$(readlink -f $host_filename)
 
@@ -106,6 +107,12 @@ for ip in $unique_host_list; do
     echo "killing ".$ip
   ssh $ssh_options $ip \
     killall -q $progname
+done
+echo "Killing previous instances of '$multiname' on servers, please wait..."
+for ip in $unique_host_list; do
+    echo "killing ".$ip
+  ssh $ssh_options $ip \
+    killall -q $multiname
 done
 echo "All done!"
 # exit

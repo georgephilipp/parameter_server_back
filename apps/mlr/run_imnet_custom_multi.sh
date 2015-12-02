@@ -5,13 +5,16 @@
 ssh_options="-oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -oLogLevel=quiet"
 outpath_tag="custom_imnet"
 
+#master input
+parm_file=/usr0/home/gschoenh/imnetParms.txt
+
 #app-specific inputs
 #training
 train_file=/usr0/home/gschoenh/imnet
 global_data=false
 force_global_file_names=true
 num_train_data=500  # interesting
-num_epochs=10  #interesting
+num_epochs=1000  #interesting
 num_batches_per_epoch=1
 #model
 lambda=0
@@ -22,9 +25,10 @@ add_immediately=false
 #testing
 test_file=/usr0/home/gschoenh/imnet
 perform_test=true
-num_epochs_per_eval=1
-num_test_data=100
-num_train_eval=500
+num_epochs_per_eval=100
+num_test_data=10000
+out_cols="epochs:train01:trainEntropy:trainObj:test01:time:waitPercentage"
+num_train_eval=100
 num_test_eval=100
 #checkpoint/restart
 use_weight_file=false
@@ -70,7 +74,10 @@ script_path=`readlink -f $0`
 script_dir=`dirname $script_path`
 app_dir=`dirname $script_dir`
 progname=mlr_main
+multiname=mlr_multi
 prog_path=$app_dir/mlr/${progname}
+multi_path=$app_dir/mlr/${multiname}
+system_path=$app_dir/mlr/
 host_file=$(readlink -f $host_filename)
 
 # Parse hostfile
@@ -92,33 +99,29 @@ then
 fi
 
 output_dir="${app_dir}/mlr/output"
-output_dir="${output_dir}/mlr.${outpath_tag}.S${table_staleness}.E${num_epochs}"
-output_dir="${output_dir}.M${num_unique_hosts}"
-output_dir="${output_dir}.T${num_table_threads}"
-output_dir="${output_dir}.B${num_batches_per_epoch}.${consistency_model}.${learning_rate}_full"
+#output_dir="${output_dir}/mlr.${outpath_tag}.S${table_staleness}.E${num_epochs}"
+#output_dir="${output_dir}.M${num_unique_hosts}"
+#output_dir="${output_dir}.T${num_table_threads}"
+#output_dir="${output_dir}.B${num_batches_per_epoch}.${consistency_model}.${learning_rate}_full"
 
-output_file_prefix=$output_dir/mlr_out  # prefix for program outputs
-rm -rf ${output_dir}
-mkdir -p ${output_dir}
-echo Output Dir is $output_dir
-
-log_dir=$output_dir/logs
-stats_path=${output_dir}/mlr_stats.yaml
+output_file_prefix=$output_dir/$outpath_tag  # prefix for program outputs
+log_dir=$output_dir/${outpath_tag}_logs
+stats_path=${output_dir}/${outpath_tag}_mlr_stats.yaml
 echo $stats_path
 
 # Kill previous instances of this program
-echo "Killing previous instances of '$progname' on servers, please wait..."
+echo "Killing previous instances of '$multiname' on servers, please wait..."
 for ip in $unique_host_list; do
     echo "killing ".$ip
   ssh $ssh_options $ip \
-    killall -q $progname
+    killall -q $multiname
 done
 echo "All done!"
 # exit
 
 # Spawn program instances
 client_id=0
-for ip in $host_list; do
+ip=${host_list[0]}
   echo Running client $client_id on $ip
   log_path=${log_dir}.${client_id}
 
@@ -130,7 +133,7 @@ GLOG_logtostderr=true \
       GLOG_v=-1 \
       GLOG_minloglevel=0 \
       GLOG_vmodule="" \
-      $prog_path \
+      $multi_path \
     --stats_path ${stats_path}\
     --num_clients $num_hosts \
     --num_comm_channels_per_client $num_comm_channels_per_client \
@@ -143,7 +146,7 @@ GLOG_logtostderr=true \
     --server_bandwidth_mbps $server_bandwidth_mbps \
     --bg_idle_milli $bg_idle_milli \
     --thread_oplog_batch_size $thread_oplog_batch_size \
-    --row_candidate_factor ${row_candidate_factor} \
+    --row_candidate_factor ${row_candidate_factor}
     --server_idle_milli $server_idle_milli \
     --update_sort_policy $update_sort_policy \
     --numa_opt=${numa_opt} \
@@ -170,6 +173,7 @@ GLOG_logtostderr=true \
     --force_global_file_names=$force_global_file_names \
     --num_train_data=$num_train_data \
     --num_epochs=$num_epochs \
+    --parm_file=$parm_file \
     --num_batches_per_epoch=$num_batches_per_epoch \
     --lambda=$lambda \
     --learning_rate=$learning_rate \
@@ -180,13 +184,16 @@ GLOG_logtostderr=true \
     --perform_test=$perform_test \
     --num_epochs_per_eval=$num_epochs_per_eval \
     --num_test_data=$num_test_data \
+    --out_cols=$out_cols \
     --num_train_eval=$num_train_eval \
     --num_test_eval=$num_test_eval \
     --use_weight_file=$use_weight_file \
     --weight_file=$weight_file \
     --num_secs_per_checkpoint=${num_secs_per_checkpoint} \
     --w_table_num_cols=$w_table_num_cols \
-    --output_file_prefix=$output_file_prefix"
+    --output_file_prefix=$output_file_prefix \
+    --prog_path=$prog_path \
+    --system_path=$system_path"
 
   ssh $ssh_options $ip $cmd &
   #eval $cmd  # Use this to run locally (on one machine).
@@ -200,4 +207,3 @@ GLOG_logtostderr=true \
     sleep 3
   fi
   client_id=$(( client_id+1 ))
-done
