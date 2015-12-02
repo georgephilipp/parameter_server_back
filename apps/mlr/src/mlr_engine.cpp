@@ -249,7 +249,7 @@ void MLREngine::Start() {
   workload_mgr_config.num_clients = num_clients;
   workload_mgr_config.num_threads = num_threads;
   workload_mgr_config.num_batches_per_epoch = num_batches_per_epoch;
-  workload_mgr_config.num_data = num_train_data_;
+  workload_mgr_config.num_data = (read_format_ == "custom_imnet") ? (num_train_data_ / num_clients) :  num_train_data_;
   workload_mgr_config.global_data = global_data;
   petuum::ml::WorkloadManager workload_mgr(workload_mgr_config);
   petuum::ml::WorkloadManager workload_mgr_train_error(workload_mgr_config);
@@ -261,7 +261,7 @@ void MLREngine::Start() {
   test_workload_mgr_config.num_threads = num_threads;
   test_workload_mgr_config.num_batches_per_epoch = 1;
   // Need to set num_data to non-zero to avoid problem in WorkloadManager.
-  test_workload_mgr_config.num_data = perform_test_ ? num_test_data_ : 10000;
+  test_workload_mgr_config.num_data = perform_test_ ? ((read_format_ == "custom_imnet") ? (num_test_data_ / num_clients) : num_test_data_) : 10000;
   // test set is always global (duplicated on all clients) except in custom_imnet format
   test_workload_mgr_config.global_data = (read_format_ == "custom_imnet")  ? false : true;
   petuum::ml::WorkloadManager test_workload_mgr(test_workload_mgr_config);
