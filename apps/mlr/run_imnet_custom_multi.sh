@@ -121,8 +121,8 @@ echo "All done!"
 
 # Spawn program instances
 client_id=0
-ip=${host_list[0]}
-  echo Running client $client_id on $ip
+for ip in $host_list; do
+  echo Running master process on $ip
   log_path=${log_dir}.${client_id}
 
   numa_index=$(( client_id%num_unique_hosts ))
@@ -207,3 +207,5 @@ GLOG_logtostderr=true \
     sleep 3
   fi
   client_id=$(( client_id+1 ))
+  exit
+done
