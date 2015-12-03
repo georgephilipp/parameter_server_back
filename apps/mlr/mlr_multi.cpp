@@ -119,6 +119,7 @@ public:
 	double lambda;
 	double learning_rate;
 	double decay_rate;
+	int32_t num_batches_per_epoch;
     
     ParmStruct()
     {
@@ -133,6 +134,7 @@ public:
         lambda = FLAGS_lambda;
         learning_rate = FLAGS_learning_rate;
         decay_rate = FLAGS_decay_rate;
+	num_batches_per_epoch = FLAGS_num_batches_per_epoch;
 	//cached for later
 	output_file_prefix = FLAGS_output_file_prefix;
     }      
@@ -150,6 +152,7 @@ public:
         FLAGS_lambda = lambda;
         FLAGS_learning_rate = learning_rate;
         FLAGS_decay_rate = decay_rate;
+	FLAGS_num_batches_per_epoch = num_batches_per_epoch;
 
         std::stringstream outSuffix;
         
@@ -164,6 +167,7 @@ public:
         outSuffix << ".L" << lambda;
         outSuffix << ".MU" << learning_rate;
         outSuffix << ".MUD" << decay_rate;
+	outSuffix << ".BPE" << num_batches_per_epoch;
 
 	FLAGS_output_file_prefix = output_file_prefix + outSuffix.str();
 	FLAGS_stats_path = FLAGS_output_file_prefix + ".stats.yaml";
@@ -215,10 +219,15 @@ public:
 	{
 		decay_rate = std::stod(argval);
 	}
+	else if(argname == "num_batches_per_epoch")
+	{
+		num_batches_per_epoch = std::stoi(argval);
+	}
 	else
 	{
 		gstd::error("unknown parm");
 	}
+	
     }
 
 	std::string get_output_file_prefix()
@@ -240,6 +249,7 @@ public:
 		res.push_back("lambda");
 		res.push_back("learning_rate");
 		res.push_back("decay_rate");
+		res.push_back("num_batches_per_epoch");
 		return res;
 	}
 
@@ -257,6 +267,7 @@ public:
 		res.push_back(std::to_string(lambda));
 		res.push_back(std::to_string(learning_rate));
 		res.push_back(std::to_string(decay_rate));
+		res.push_back(std::to_string(num_batches_per_epoch));
 		return res;
 	}
 
@@ -444,13 +455,18 @@ void run()
 "num_hosts=`cat $host_file | awk '{ print $2 }' | wc -l`\n"
 "\n"
 "#derived\n"
-"if $add_immediately\n"
+"if [ \"$num_batches_per_epoch\" -eq \"0\" ]\n"
 "then\n"
-"  echo 'adjusting batches per epoch'\n"
-"  let num_batches_per_epoch=num_train_data/num_table_threads\n"
-"  let num_batches_per_epoch=num_batches_per_epoch/num_hosts\n"
-"  let num_batches_per_epoch=num_batches_per_epoch/25\n"
-"  echo 'Here is comes'\n"
+"  if $add_immediately\n"
+"  then\n"
+"    echo 'adjusting batches per epoch'\n"
+"    let num_batches_per_epoch=num_train_data/num_table_threads\n"
+"    let num_batches_per_epoch=num_batches_per_epoch/num_hosts\n"
+"    let num_batches_per_epoch=num_batches_per_epoch/25\n"
+"  else\n"
+"    let num_batches_per_epoch=1\n"
+"  fi\n"
+"  echo 'Here it comes'\n"
 "  echo $num_batches_per_epoch\n"
 "fi\n"
 "\n"
