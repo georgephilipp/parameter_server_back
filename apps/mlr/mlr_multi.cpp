@@ -645,6 +645,7 @@ int main(int argc, char *argv[])
     google::InitGoogleLogging(argv[0]);
     CHECK(!FLAGS_sparse_weight) << "Not yet supported!";    
     gstd::check(!gstd::file::exists({FLAGS_output_file_prefix})[0], "outfile path exists");
+    gstd::check(!gstd::file::exists({FLAGS_output_file_prefix + "_verbose"})[0], "verbose outfile path exists");
     std::vector<std::string> outFields;
     std::vector<std::vector<std::string> > parmContent;
 	if(FLAGS_parm_file != "")
