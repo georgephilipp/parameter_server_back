@@ -13,6 +13,7 @@ force_global_file_names=true
 num_train_data=500  # interesting
 num_epochs=10  #interesting
 num_batches_per_epoch=1
+ignore_nan=true
 #model
 lambda=0
 learning_rate=0.001
@@ -171,6 +172,7 @@ GLOG_logtostderr=true \
     --num_train_data=$num_train_data \
     --num_epochs=$num_epochs \
     --num_batches_per_epoch=$num_batches_per_epoch \
+    --ignore_nan=$ignore_nan \
     --lambda=$lambda \
     --learning_rate=$learning_rate \
     --decay_rate=$decay_rate \

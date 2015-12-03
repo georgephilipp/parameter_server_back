@@ -98,7 +98,17 @@ void LRSGDSolver::push() {
     petuum::DenseUpdateBatch<float> w_update_batch(0, w_table_num_cols_);
     for (int j = 0; j < w_table_num_cols_; ++j) {
       int idx = i * w_table_num_cols_ + j;
-      CHECK_EQ(w_delta_[idx], w_delta_[idx]) << "nan detected.";
+      if(!(w_delta_[idx] == w_delta_[idx]))
+      {
+        if(FLAGS_ignore_nan)
+        {
+          w_delta_[idx] = 0;
+        }
+        else
+        {
+          CHECK_EQ(w_delta_[idx], w_delta_[idx]) << "nan detected.";
+        }
+      }
       w_update_batch[j] = w_delta_[idx];
     }  
     w_table_.DenseBatchInc(i, w_update_batch);
@@ -110,7 +120,17 @@ void LRSGDSolver::push() {
     petuum::DenseUpdateBatch<float> w_update_batch(0, num_cols_last_row);
     for (int j = 0; j < num_cols_last_row; ++j) {
       int idx = num_full_rows * w_table_num_cols_ + j;
-      CHECK_EQ(w_delta_[idx], w_delta_[idx]) << "nan detected.";
+      if(!(w_delta_[idx] == w_delta_[idx]))
+      {
+        if(FLAGS_ignore_nan)
+        {
+          w_delta_[idx] = 0;
+        }
+        else
+        {
+          CHECK_EQ(w_delta_[idx], w_delta_[idx]) << "nan detected.";
+        }
+      }
       w_update_batch[j] = w_delta_[idx];
     }
     w_table_.DenseBatchInc(num_full_rows, w_update_batch);

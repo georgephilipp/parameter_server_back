@@ -42,6 +42,7 @@ DECLARE_string(weight_file);
 DECLARE_int32(num_epochs);
 DECLARE_int32(num_batches_per_epoch);
 DECLARE_int32(num_batches_per_clock);
+DECLARE_bool(ignore_nan);
 DECLARE_string(parm_file);
 DECLARE_double(learning_rate);
 DECLARE_double(decay_rate);
@@ -68,6 +69,7 @@ DEFINE_int32(num_epochs, 1, "Number of data sweeps.");
 DEFINE_int32(num_batches_per_epoch, 10, "Since we Clock() at the end of each batch, "
     "num_batches_per_epoch is effectively the number of clocks per epoch (iteration)");
 DEFINE_int32(num_batches_per_clock, 1000000000, "doesn't do anything yet");
+DEFINE_bool(ignore_nan, false, "if this is true, replace nan by 0");
 // Model
 DEFINE_string(parm_file, "", "Input parameter file");
 DEFINE_double(lambda, 0.1, "L2 regularization parameter, only used for binary LR.");
@@ -338,6 +340,65 @@ std::map<std::string,std::string> readOutFiles(std::function<bool(std::vector<st
 	return res;
 }
 
+std::vector<std::map<std::string,std::string> > readOutFilesComplete()
+{
+	std::vector<std::map<std::string, std::string> > res;
+
+	std::vector<std::vector<std::string> > outFile = gstd::Reader::rs<std::string>(FLAGS_output_file_prefix + ".loss", ' ');
+	std::vector<std::string> targetTableHeader = {"Epoch", "Batch", "Train-0-1", "Train-Entropy", "Train-obj", "Num-Train-Used", "Test-0-1", "Num-Test-Used", "Time"};
+	if(!FLAGS_perform_test)
+		targetTableHeader = {"Epoch", "Batch", "Train-0-1", "Train-Entropy", "Train-obj", "Num-Train-Used", "Time"};
+	int targetHeaderRow = 0;
+	for(targetHeaderRow = 0; targetHeaderRow<(int)outFile.size(); targetHeaderRow++)
+	{
+		if(outFile[targetHeaderRow] == targetTableHeader)
+			break;
+	}
+	gstd::check(targetHeaderRow < (int)outFile.size(), "did not find headerrow in outfile. Target table header was:" + gstd::Printer::vp(targetTableHeader));
+	gstd::check(outFile[targetHeaderRow] == targetTableHeader, "outfile reading failed on header row. header row found was " + gstd::Printer::vp(outFile[targetHeaderRow]));
+	
+	double waitPercentage = 0;
+
+	for(int i=0; i<FLAGS_num_clients;i++)
+	{
+		std::vector<std::string> statsFile = gstd::Reader::ls(FLAGS_output_file_prefix + ".stats.yaml." + std::to_string(i));
+		for(int j=0;j<(int)statsFile.size();j++)
+		{
+			std::string argname = "app_sum_accum_comm_block_sec_percent";
+			if(statsFile[j].substr(0, argname.size()) == argname)
+			{
+				std::vector<std::string> temp = gstd::Parser::vector<std::string>(statsFile[j], ' ');
+				waitPercentage += std::stod(temp[1]) / ((double)FLAGS_num_clients);
+			}
+		}
+	}
+
+        for(int i=targetHeaderRow+1;i<(int)outFile.size();i++)
+	{
+		std::vector<std::string> row = outFile[i];
+		if((int)outFile[i].size() == 0)
+			continue;
+		std::map<std::string, std::string> resRow;
+		resRow["epochs"] = row[0];
+		resRow["train01"] = row[2];
+		resRow["trainEntropy"] = row[3];
+		resRow["trainObj"] = row[4];
+		if(FLAGS_perform_test)
+		{
+			resRow["test01"] = row[6];
+			resRow["time"] = row[8];
+		}
+		else
+		{
+			resRow["time"] = row[6];
+			resRow["test01"] = "-1";
+		}
+		resRow["waitPercentage"] = std::to_string(waitPercentage);
+		res.push_back(resRow);
+	}	
+	return res;
+}
+
 std::string printBool(bool val)
 {
 	if(val)
@@ -382,6 +443,7 @@ void run()
 "num_train_data=" + printInt(FLAGS_num_train_data) + "\n"
 "num_epochs=" + printInt(FLAGS_num_epochs) + "\n"
 "num_batches_per_epoch=" + printInt(FLAGS_num_batches_per_epoch) + "\n"
+"ignore_nan=" + printBool(FLAGS_ignore_nan) + "\n"
 "#model\n"
 "lambda=" + printDouble(FLAGS_lambda) + "\n"
 "learning_rate=" + printDouble(FLAGS_learning_rate) + "\n"
@@ -536,6 +598,7 @@ void run()
 "    --num_train_data=$num_train_data \\\n"
 "    --num_epochs=$num_epochs \\\n"
 "    --num_batches_per_epoch=$num_batches_per_epoch \\\n"
+"    --ignore_nan=$ignore_nan \\\n"
 "    --lambda=$lambda \\\n"
 "    --learning_rate=$learning_rate \\\n"
 "    --decay_rate=$decay_rate \\\n"
@@ -597,6 +660,7 @@ int main(int argc, char *argv[])
     resHeader.push_back("num_test_data");
     resHeader.push_back("perform_test");
     res.push_back(resHeader);
+    gstd::Writer::rs<std::string>(ps.get_output_file_prefix(), {resHeader}, " ", false, std::ios::app);
     for(int i=1;i<(int)parmContent.size();i++)
     {
         gstd::check(parmContentRowSize == (int)parmContent[i].size(), "parms are not a table");
@@ -604,16 +668,39 @@ int main(int argc, char *argv[])
             ps.consume(parmContent[0][j], parmContent[i][j]);
         ps.set();
 	run();
-        std::map<std::string, std::string> resFiles = readOutFiles(defaultStoppageCriterion);
-        std::vector<std::string> resRow = ps.getRow();
-        for(int j=0; j<(int)outCols.size(); j++)
-            resRow.push_back(resFiles[outCols[j]]);
-	resRow.push_back(std::to_string(FLAGS_num_test_data));
-	resRow.push_back(std::to_string(FLAGS_perform_test));
-        res.push_back(resRow);
+
+	{
+		//build concise outfile
+		std::map<std::string, std::string> resFiles = readOutFiles(defaultStoppageCriterion);
+		std::vector<std::string> resRow = ps.getRow();
+		for(int j=0; j<(int)outCols.size(); j++)
+		    resRow.push_back(resFiles[outCols[j]]);
+		resRow.push_back(std::to_string(FLAGS_num_test_data));
+		resRow.push_back(std::to_string(FLAGS_perform_test));
+		res.push_back(resRow);
+		if(FLAGS_client_id == 0)
+		    gstd::Writer::rs<std::string>(ps.get_output_file_prefix(), {resRow}, " ", false, std::ios::app);
+	}
+
+	{
+		//build verbose outfile
+		std::vector<std::map<std::string, std::string> > resFiles = readOutFilesComplete();
+		std::vector<std::vector<std::string> > verboseRes = {resHeader};
+		for(int j=0; j<(int)resFiles.size(); j++)
+		{
+			std::map<std::string, std::string> row = resFiles[j];
+			std::vector<std::string> resRow = ps.getRow();
+			for(int j=0; j<(int)outCols.size(); j++)
+			    resRow.push_back(row[outCols[j]]);
+			resRow.push_back(std::to_string(FLAGS_num_test_data));
+			resRow.push_back(std::to_string(FLAGS_perform_test));
+			verboseRes.push_back(resRow);
+		}
+		if(FLAGS_client_id == 0)
+		    gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_verbose", verboseRes, " ", false, std::ios::app);
+	}
     }
-    if(FLAGS_client_id == 0)
-        gstd::Writer::rs<std::string>(ps.get_output_file_prefix(), res, " ", true);
+    
     
     return 0;
 }

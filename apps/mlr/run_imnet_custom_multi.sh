@@ -3,7 +3,7 @@
 
 #bash file inputs
 ssh_options="-oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -oLogLevel=quiet"
-outpath_tag="custom_imnet"
+outpath_tag="custom_imnet_rep"
 
 #master input
 parm_file=/usr0/home/gschoenh/imnetParms.txt
@@ -16,6 +16,7 @@ force_global_file_names=true
 num_train_data=500  # interesting
 num_epochs=1000  #interesting
 num_batches_per_epoch=1
+ignore_nan=true
 #model
 lambda=0
 learning_rate=0.001
@@ -25,10 +26,10 @@ add_immediately=false
 #testing
 test_file=/usr0/home/gschoenh/imnet
 perform_test=true
-num_epochs_per_eval=100
-num_test_data=10000
+num_epochs_per_eval=1
+num_test_data=100
 out_cols="epochs:train01:trainEntropy:trainObj:test01:time:waitPercentage"
-num_train_eval=100
+num_train_eval=500
 num_test_eval=100
 #checkpoint/restart
 use_weight_file=false
@@ -175,6 +176,7 @@ GLOG_logtostderr=true \
     --num_epochs=$num_epochs \
     --parm_file=$parm_file \
     --num_batches_per_epoch=$num_batches_per_epoch \
+    --ignore_nan=$ignore_nan \
     --lambda=$lambda \
     --learning_rate=$learning_rate \
     --decay_rate=$decay_rate \
