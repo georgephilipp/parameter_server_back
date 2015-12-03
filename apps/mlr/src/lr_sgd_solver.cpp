@@ -85,9 +85,12 @@ int32_t LRSGDSolver::ZeroOneLoss(const std::vector<float>& prediction, int32_t l
 //XEntropy Loss: trivial
 float LRSGDSolver::CrossEntropyLoss(const std::vector<float>& prediction, int32_t label)
   const {
-    CHECK_LE(prediction[label], 1);
-    CHECK_GE(prediction[label], 0);
-    return -petuum::ml::SafeLog(prediction[label]);
+    /*CHECK_LE(prediction[label], 1);
+    CHECK_GE(prediction[label], 0);*/
+    if(!(prediction[label] > 0 && prediction[label] <= 1))
+        return 10000000000000;
+    else
+        return -petuum::ml::SafeLog(prediction[label]);
   }
 
 //inc and get: from and to thread cache
