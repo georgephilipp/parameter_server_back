@@ -155,7 +155,7 @@ int main(int argc, char *argv[]) {
     thr.join();
   }
   petuum::PSTableGroup::ShutDown();
-  if(FLAGS_signal_file_path != "")
+  if(FLAGS_signal_file_path != "" && FLAGS_client_id == 0)
     gstd::Writer::w(FLAGS_signal_file_path, "done", true);
   LOG(INFO) << "MLR finished and shut down!";
 
