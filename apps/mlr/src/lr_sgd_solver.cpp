@@ -79,7 +79,10 @@ void LRSGDSolver::Predict(
 //zerooneloss: trivial
 int32_t LRSGDSolver::ZeroOneLoss(const std::vector<float>& prediction, int32_t label)
   const {
-    return prediction[label] >= 0.5 ? 0 : 1;
+    if(label == 0)
+        return prediction[0] > 0.5 ? 0 : 1;
+    else
+        return prediction[1] >= 0.5 ? 0 : 1;
   }
 
 //XEntropy Loss: trivial

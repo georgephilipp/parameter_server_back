@@ -20,6 +20,7 @@ ignore_nan=true
 #model
 lambda=0
 learning_rate=0.001
+learning_rate_search=false
 decay_rate=0.99
 sparse_weight=false
 add_immediately=false
@@ -179,6 +180,7 @@ GLOG_logtostderr=true \
     --ignore_nan=$ignore_nan \
     --lambda=$lambda \
     --learning_rate=$learning_rate \
+    --learning_rate_search=$learning_rate_search \
     --decay_rate=$decay_rate \
     --sparse_weight=${sparse_weight}\
     --add_immediately=${add_immediately} \

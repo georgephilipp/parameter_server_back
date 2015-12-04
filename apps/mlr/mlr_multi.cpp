@@ -45,6 +45,7 @@ DECLARE_int32(num_batches_per_clock);
 DECLARE_bool(ignore_nan);
 DECLARE_string(parm_file);
 DECLARE_double(learning_rate);
+DECLARE_bool(learning_rate_search);
 DECLARE_double(decay_rate);
 DECLARE_int32(num_epochs_per_eval);
 DECLARE_bool(sparse_weight);
@@ -75,6 +76,7 @@ DEFINE_string(parm_file, "", "Input parameter file");
 DEFINE_double(lambda, 0.1, "L2 regularization parameter, only used for binary LR.");
 DEFINE_double(learning_rate, 0.1, "Initial step size");
 DEFINE_double(decay_rate, 1, "multiplicative decay");
+DEFINE_bool(learning_rate_search, false, "if true, then learning rate is optimizes with binary interval search");
 DEFINE_bool(sparse_weight, false, "Use sparse feature for model parameters");
 DEFINE_bool(add_immediately, false, "Add computed updates to the feature vector immediately");
 //Testing
@@ -106,6 +108,176 @@ DEFINE_string(system_path, "", "path to the directory where to hold shenanigans"
 
 const int32_t kDenseRowFloatTypeID = 0;
 //const int32_t kSparseFeatureRowFloatTypeID = 1;
+
+
+
+class IntervalSearchController
+{
+public:
+    IntervalSearchController(
+        double startTop, 
+        double startBottom, 
+        double startTopVal, 
+        double startBottomVal, 
+        double threshold_
+    )
+    {
+        pointTop = startTop;
+        pointBottom = startBottom;
+        topVal = startTopVal;
+        bottomVal = startBottomVal;
+        next = "initMiddle";
+        threshold = threshold_;
+	searchLog.push_back({"startTop", gstd::Printer::p(pointTop), gstd::Printer::p(topVal)});
+	searchLog.push_back({"startBottom", gstd::Printer::p(pointBottom), gstd::Printer::p(bottomVal)});
+    }
+        
+    double get()
+    {
+        if( next == "initMiddle" )
+            suggested = (pointTop + pointBottom) / 2;
+        else if( next == "initBottom" )
+            suggested = 3*pointCenter - 2*pointTop;
+        else if( next == "initTop" )
+            suggested = 3*pointCenter - 2*pointBottom;
+        else if( next == "top" )
+            suggested = (pointTop + pointCenter) / 2;
+        else if(next == "bottom")
+            suggested = (pointBottom + pointCenter) / 2;
+        else
+            gstd::error("unknown next value");
+        return suggested;
+    }
+    
+    bool consume( double val )
+    {
+        searchLog.push_back({next, std::to_string(suggested), std::to_string(val)});
+        if( next == "initMiddle" )
+        {
+            if( val <= bottomVal && val <= topVal )
+            {
+                pointCenter = suggested;
+                centerVal = val;
+                next = "top";
+            }
+            else if( topVal >= bottomVal)
+            {
+                pointCenter = pointBottom;
+                centerVal = bottomVal;
+                pointTop = suggested;
+                topVal = val;
+                next = "initBottom";
+            }
+            else 
+            {
+                pointCenter = pointTop;
+                centerVal = topVal;
+                pointBottom = suggested;
+                bottomVal = val;
+                next = "initTop";
+            }
+        }
+        else if( next == "initBottom" )
+        {
+            if( val >= centerVal )
+            {
+                pointBottom = suggested;
+                bottomVal = val;
+                next = "top";
+            }
+            else
+            {
+                pointTop = pointCenter;
+                topVal = centerVal;
+                pointCenter = suggested;
+                centerVal = val;
+            }
+        }
+        else if( next == "initTop" )
+        {
+            if( val >= centerVal )
+            {
+                pointTop = suggested;
+                topVal = val;
+                next = "top";
+            }
+            else
+            {
+                pointBottom = pointCenter;
+                bottomVal = centerVal;
+                pointCenter = suggested;
+                centerVal = val;
+            }
+        }
+        else if( next == "top" )
+        {
+            if(val >= centerVal)
+            {
+                pointTop = suggested;
+                topVal = val;
+            }
+            else
+            {
+                pointBottom = pointCenter;
+                bottomVal = centerVal;
+                pointCenter = suggested;
+                centerVal = val;
+            }
+            next = "bottom";
+        }
+        else if(next == "bottom")
+        {
+            if(val >= centerVal)
+            {
+                pointBottom = suggested;
+                bottomVal = val;
+            }
+            else
+            {
+                pointTop = pointCenter;
+                topVal = centerVal;
+                pointCenter = suggested;
+                centerVal = val;
+            }
+            next = "top";
+        }
+        else 
+            gstd::error("unknown next value");
+            
+        if((next == "top" || next == "bottom") && pointTop - pointCenter <= threshold && pointCenter - pointBottom <= threshold)
+            return true;
+        else
+            return false;
+    }
+    
+    double getPointCenter()
+    {
+        return pointCenter;
+    }
+    
+    double getCenterVal()
+    {
+        return centerVal;
+    }
+
+    std::vector<std::vector<std::string> > getLog()
+    {
+	return searchLog;
+    }
+    
+private:
+    double pointTop;
+    double pointCenter;
+    double pointBottom;
+    double topVal;
+    double centerVal;
+    double bottomVal;
+    double suggested;
+    std::string next;
+    double threshold;
+    std::vector<std::vector<std::string> > searchLog;
+};
+
 
 class ParmStruct
 {
@@ -258,18 +430,18 @@ public:
 	std::vector<std::string> getRow()
 	{
 		std::vector<std::string> res;
-		res.push_back(std::to_string(num_train_data));
-		res.push_back(std::to_string(client_bandwidth_mbps));
-		res.push_back(std::to_string(server_bandwidth_mbps));
-		res.push_back(std::to_string(table_staleness));
+		res.push_back(gstd::Printer::p(num_train_data));
+		res.push_back(gstd::Printer::p(client_bandwidth_mbps));
+		res.push_back(gstd::Printer::p(server_bandwidth_mbps));
+		res.push_back(gstd::Printer::p(table_staleness));
 		res.push_back(consistency_model);
-		res.push_back(std::to_string(add_immediately));
-		res.push_back(std::to_string(num_batches_per_clock));
-		res.push_back(std::to_string(num_epochs));
-		res.push_back(std::to_string(lambda));
-		res.push_back(std::to_string(learning_rate));
-		res.push_back(std::to_string(decay_rate));
-		res.push_back(std::to_string(num_batches_per_epoch));
+		res.push_back(gstd::Printer::p(add_immediately));
+		res.push_back(gstd::Printer::p(num_batches_per_clock));
+		res.push_back(gstd::Printer::p(num_epochs));
+		res.push_back(gstd::Printer::p(lambda));
+		res.push_back(gstd::Printer::p(learning_rate));
+		res.push_back(gstd::Printer::p(decay_rate));
+		res.push_back(gstd::Printer::p(num_batches_per_epoch));
 		return res;
 	}
 
@@ -304,7 +476,7 @@ std::map<std::string,std::string> readOutFiles(std::function<bool(std::vector<st
 		}
 	}
 	std::vector<std::string> stoppageRow = outFile[stoppageRowInd];
-	gstd::check(stoppageRow.size() == targetTableHeader.size(), "incorrect size of stoppage row. StoppageRowInd was" + std::to_string(stoppageRowInd) + " Stoppage row was " + gstd::Printer::vp<std::string>(stoppageRow) + " size of stoppage row was " + gstd::Printer::p(stoppageRow.size()) + " size of header was " + gstd::Printer::p(targetTableHeader.size()));
+	gstd::check(stoppageRow.size() == targetTableHeader.size(), "incorrect size of stoppage row. StoppageRowInd was" + gstd::Printer::p(stoppageRowInd) + " Stoppage row was " + gstd::Printer::vp<std::string>(stoppageRow) + " size of stoppage row was " + gstd::Printer::p(stoppageRow.size()) + " size of header was " + gstd::Printer::p(targetTableHeader.size()));
 	res["epochs"] = stoppageRow[0];
 	res["train01"] = stoppageRow[2];
 	res["trainEntropy"] = stoppageRow[3];
@@ -324,7 +496,7 @@ std::map<std::string,std::string> readOutFiles(std::function<bool(std::vector<st
 
 	for(int i=0; i<FLAGS_num_clients;i++)
 	{
-		std::vector<std::string> statsFile = gstd::Reader::ls(FLAGS_output_file_prefix + ".stats.yaml." + std::to_string(i));
+		std::vector<std::string> statsFile = gstd::Reader::ls(FLAGS_output_file_prefix + ".stats.yaml." + gstd::Printer::p(i));
 		for(int j=0;j<(int)statsFile.size();j++)
 		{
 			std::string argname = "app_sum_accum_comm_block_sec_percent";
@@ -336,7 +508,7 @@ std::map<std::string,std::string> readOutFiles(std::function<bool(std::vector<st
 		}
 	}
 
-	res["waitPercentage"] = std::to_string(waitPercentage);
+	res["waitPercentage"] = gstd::Printer::p(waitPercentage);
 	return res;
 }
 
@@ -361,7 +533,7 @@ std::vector<std::map<std::string,std::string> > readOutFilesComplete()
 
 	for(int i=0; i<FLAGS_num_clients;i++)
 	{
-		std::vector<std::string> statsFile = gstd::Reader::ls(FLAGS_output_file_prefix + ".stats.yaml." + std::to_string(i));
+		std::vector<std::string> statsFile = gstd::Reader::ls(FLAGS_output_file_prefix + ".stats.yaml." + gstd::Printer::p(i));
 		for(int j=0;j<(int)statsFile.size();j++)
 		{
 			std::string argname = "app_sum_accum_comm_block_sec_percent";
@@ -393,7 +565,7 @@ std::vector<std::map<std::string,std::string> > readOutFilesComplete()
 			resRow["time"] = row[6];
 			resRow["test01"] = "-1";
 		}
-		resRow["waitPercentage"] = std::to_string(waitPercentage);
+		resRow["waitPercentage"] = gstd::Printer::p(waitPercentage);
 		res.push_back(resRow);
 	}	
 	return res;
@@ -409,12 +581,12 @@ std::string printBool(bool val)
 
 std::string printInt(int val)
 {
-	return std::to_string(val);
+	return gstd::Printer::p(val);
 }
 
 std::string printDouble(double val)
 {
-	return std::to_string(val);
+	return gstd::Printer::p(val);
 }
 
 void run()
@@ -478,21 +650,21 @@ void run()
 "table_staleness=" + printInt(FLAGS_table_staleness) + "\n"
 "\n"
 "#Obscure System Parms:\n"
-"bg_idle_milli=" + std::to_string(FLAGS_bg_idle_milli) + "\n"
+"bg_idle_milli=" + gstd::Printer::p(FLAGS_bg_idle_milli) + "\n"
 "# Total bandwidth: bandwidth_mbps * num_comm_channels_per_client * 2\n"
-"client_bandwidth_mbps=" + std::to_string(FLAGS_client_bandwidth_mbps) + "\n"
-"server_bandwidth_mbps=" + std::to_string(FLAGS_server_bandwidth_mbps) + "\n"
+"client_bandwidth_mbps=" + gstd::Printer::p(FLAGS_client_bandwidth_mbps) + "\n"
+"server_bandwidth_mbps=" + gstd::Printer::p(FLAGS_server_bandwidth_mbps) + "\n"
 "# bandwidth / oplog_push_upper_bound should be > miliseconds.\n"
-"thread_oplog_batch_size=" + std::to_string(FLAGS_thread_oplog_batch_size) + "\n"
-"server_idle_milli=" + std::to_string(FLAGS_server_idle_milli) + "\n"
+"thread_oplog_batch_size=" + gstd::Printer::p(FLAGS_thread_oplog_batch_size) + "\n"
+"server_idle_milli=" + gstd::Printer::p(FLAGS_server_idle_milli) + "\n"
 "update_sort_policy=" + FLAGS_update_sort_policy + "\n"
-"row_candidate_factor=" + std::to_string(FLAGS_row_candidate_factor) + "\n"
-"append_only_buffer_capacity=" + std::to_string(FLAGS_append_only_buffer_capacity) + "\n"
-"append_only_buffer_pool_size=" + std::to_string(FLAGS_append_only_buffer_pool_size) + "\n"
-"bg_apply_append_oplog_freq=" + std::to_string(FLAGS_bg_apply_append_oplog_freq) + "\n"
-"client_send_oplog_upper_bound=" + std::to_string(FLAGS_client_send_oplog_upper_bound) + "\n"
-"server_push_row_upper_bound=" + std::to_string(FLAGS_server_push_row_upper_bound) + "\n"
-"row_oplog_type=" + std::to_string(FLAGS_row_oplog_type) + "\n"
+"row_candidate_factor=" + gstd::Printer::p(FLAGS_row_candidate_factor) + "\n"
+"append_only_buffer_capacity=" + gstd::Printer::p(FLAGS_append_only_buffer_capacity) + "\n"
+"append_only_buffer_pool_size=" + gstd::Printer::p(FLAGS_append_only_buffer_pool_size) + "\n"
+"bg_apply_append_oplog_freq=" + gstd::Printer::p(FLAGS_bg_apply_append_oplog_freq) + "\n"
+"client_send_oplog_upper_bound=" + gstd::Printer::p(FLAGS_client_send_oplog_upper_bound) + "\n"
+"server_push_row_upper_bound=" + gstd::Printer::p(FLAGS_server_push_row_upper_bound) + "\n"
+"row_oplog_type=" + gstd::Printer::p(FLAGS_row_oplog_type) + "\n"
 "oplog_type=" + FLAGS_oplog_type + "\n"
 "process_storage_type=" + FLAGS_process_storage_type + "\n"
 "no_oplog_replay=" + printBool(FLAGS_no_oplog_replay) + "\n"
@@ -632,6 +804,68 @@ void run()
 	gstd::check(mgr.run().success, "Terminal run failed");
 }
 
+bool errorBasedStoppageCriterion(std::vector<std::string> row, double thresh)
+{
+    if(std::stod(row[6]) <= thresh)
+        return true;
+    else
+        return false;
+}
+    
+std::map<int32_t, double> topMuMap = {{500, 0.01}, {5000, 0.01}, {50000, 0.01}, {500000, 0.01}};
+std::map<int32_t, double> bottomMuMap = {{500, 0.001}, {5000, 0.001}, {50000, 0.001}, {500000, 0.001}};
+std::map<int32_t, double> targetErrorMap = {{500, 0.37}, {5000, 0}, {50000, 0}, {500000, 0}};
+
+IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, int32_t>& muEpochMap)
+{
+    double targetError = targetErrorMap[ps.num_train_data];
+    std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError](std::vector<std::string> row)
+    {
+        return errorBasedStoppageCriterion(row, targetError);
+    };
+
+    double topMu = topMuMap[ps.num_train_data];
+    muEpochMap[topMu] = ps.num_epochs;
+    ps.learning_rate = topMu;
+    ps.set();
+    run();
+    std::map<std::string, std::string> output = readOutFiles(boundErrorBasedStoppageCriterion);
+    int32_t numTopEpochsNeeded = std::stoi(output["epochs"]);
+    
+    double bottomMu = bottomMuMap[ps.num_train_data];
+    muEpochMap[bottomMu] = ps.num_epochs;
+    ps.learning_rate = bottomMu;
+    ps.set();
+    run();
+    output = readOutFiles(boundErrorBasedStoppageCriterion);
+    int32_t numBottomEpochsNeeded  = std::stoi(output["epochs"]);
+
+    gstd::check(numTopEpochsNeeded < ps.num_epochs || numBottomEpochsNeeded < ps.num_epochs, "could not converge on either starting config in mu search");
+
+    int32_t newEpochNumber = numBottomEpochsNeeded + 1;
+    if(numTopEpochsNeeded < numBottomEpochsNeeded)
+        newEpochNumber = numTopEpochsNeeded + 1;
+
+    ps.num_epochs = newEpochNumber;
+
+    IntervalSearchController controller(log10(topMu), log10(bottomMu), (double)numTopEpochsNeeded, (double)numBottomEpochsNeeded, log10(1.01));
+    
+    while(1)
+    {
+        double nextMu = pow(10,controller.get());
+        muEpochMap[nextMu] = ps.num_epochs;
+        ps.learning_rate = nextMu;
+        ps.set();
+        run();
+        output = readOutFiles(boundErrorBasedStoppageCriterion);
+        if(controller.consume(std::stod(output["epochs"])))
+        {
+            return controller;
+        }
+        ps.num_epochs = std::stoi(output["epochs"]) + 1;
+    }
+}
+    
 
 int main(int argc, char *argv[]) 
 {
@@ -667,17 +901,40 @@ int main(int argc, char *argv[])
         gstd::check(parmContentRowSize == (int)parmContent[i].size(), "parms are not a table");
         for(int j=0;j<parmContentRowSize; j++)
             ps.consume(parmContent[0][j], parmContent[i][j]);
-        ps.set();
-	run();
+
+        std::function<bool(std::vector<std::string>)> stoppageCriterionUsed = defaultStoppageCriterion;
+	if(FLAGS_learning_rate_search)
+	{
+            std::map<double, int32_t> muEpochMap;
+	    IntervalSearchController controller = runLearningRateSearch(ps, muEpochMap);
+	    ps.learning_rate = pow(10,controller.getPointCenter());
+            ps.num_epochs = muEpochMap[ps.learning_rate];
+            ps.set();
+            double targetError = targetErrorMap[ps.num_train_data];
+            std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError](std::vector<std::string> row)
+            {
+                return errorBasedStoppageCriterion(row, targetError);
+            };
+            stoppageCriterionUsed = boundErrorBasedStoppageCriterion;
+            std::vector<std::vector<std::string> > searchLog = controller.getLog();
+            searchLog.insert(searchLog.begin(), ps.getRow());
+	    searchLog.insert(searchLog.begin(), ps.getHeader());
+            gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::app);
+	}
+	else
+	{
+            ps.set();
+	    run();
+	}
 
 	{
 		//build concise outfile
-		std::map<std::string, std::string> resFiles = readOutFiles(defaultStoppageCriterion);
+		std::map<std::string, std::string> resFiles = readOutFiles(stoppageCriterionUsed);
 		std::vector<std::string> resRow = ps.getRow();
 		for(int j=0; j<(int)outCols.size(); j++)
 		    resRow.push_back(resFiles[outCols[j]]);
-		resRow.push_back(std::to_string(FLAGS_num_test_data));
-		resRow.push_back(std::to_string(FLAGS_perform_test));
+		resRow.push_back(gstd::Printer::p(FLAGS_num_test_data));
+		resRow.push_back(gstd::Printer::p(FLAGS_perform_test));
 		res.push_back(resRow);
 		if(FLAGS_client_id == 0)
 		    gstd::Writer::rs<std::string>(ps.get_output_file_prefix(), {resRow}, " ", false, std::ios::app);
@@ -693,8 +950,8 @@ int main(int argc, char *argv[])
 			std::vector<std::string> resRow = ps.getRow();
 			for(int j=0; j<(int)outCols.size(); j++)
 			    resRow.push_back(row[outCols[j]]);
-			resRow.push_back(std::to_string(FLAGS_num_test_data));
-			resRow.push_back(std::to_string(FLAGS_perform_test));
+			resRow.push_back(gstd::Printer::p(FLAGS_num_test_data));
+			resRow.push_back(gstd::Printer::p(FLAGS_perform_test));
 			verboseRes.push_back(resRow);
 		}
 		if(FLAGS_client_id == 0)
