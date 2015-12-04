@@ -599,6 +599,7 @@ void run()
 	mgr.completeFileNameInternal = gstd::TerminalMgr::defaultCompleteFileName;
 	mgr.commandFileNameInternal = gstd::TerminalMgr::defaultCommandFileName;
 	mgr.commandFileNameExternal = "./" + gstd::TerminalMgr::defaultCommandFileName;
+	mgr.maxWaitTime = 1000000;
 
 	mgr.command = 
 "#!/bin/bash -u\n"
