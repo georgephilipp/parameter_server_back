@@ -524,10 +524,19 @@ std::map<std::string,std::string> readOutFiles(std::function<bool(std::vector<st
 	}
 	gstd::check(targetHeaderRow < (int)outFile.size(), "did not find headerrow in outfile. Target table header was:" + gstd::Printer::vp(targetTableHeader));
 	gstd::check(outFile[targetHeaderRow] == targetTableHeader, "outfile reading failed on header row. header row found was " + gstd::Printer::vp(outFile[targetHeaderRow]));
-	int stoppageRowInd = 0;	
+	int stoppageRowInd = 0;
+        int successCounter = 0;
 	for(stoppageRowInd=targetHeaderRow+1;stoppageRowInd<(int)outFile.size() - 1;stoppageRowInd++)
 	{
 		if(stoppageCriterion(outFile[stoppageRowInd]))
+		{
+			successCounter++;
+		}
+		else
+		{
+			successCounter=0;
+		}
+		if(successCounter >= 5)
 		{
 			break;
 		}
@@ -1048,7 +1057,7 @@ while(1)
     resHeader.push_back("perform_test");
     res.push_back(resHeader);
     gstd::Writer::rs<std::string>(ps.get_output_file_prefix(), {resHeader}, " ", false, std::ios::app);
-    gstd::Writer::rs<std::string>(ps.get_output_file_prefix(), {{}}, " ", false, std::ios::trunc);
+    gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_verbose", {{}}, " ", false, std::ios::trunc);
     for(int i=1;i<(int)parmContent.size();i++)
     {
         gstd::check(parmContentRowSize == (int)parmContent[i].size(), "parms are not a table");
