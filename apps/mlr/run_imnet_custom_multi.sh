@@ -3,10 +3,10 @@
 
 #bash file inputs
 ssh_options="-oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -oLogLevel=quiet"
-outpath_tag="custom_imnet_rep"
+outpath_tag="custom_imnet_mu_ss_repl"
 
 #master input
-parm_file=/usr0/home/gschoenh/imnetParms.txt
+parm_file=/usr0/home/gschoenh/imnetParmsMuSSrepl.txt
 
 #app-specific inputs
 #training
@@ -14,7 +14,7 @@ train_file=/usr0/home/gschoenh/imnet
 global_data=false
 force_global_file_names=true
 num_train_data=500  # interesting
-num_epochs=1000  #interesting
+num_epochs=10  #interesting
 num_batches_per_epoch=1
 ignore_nan=true
 #model
@@ -22,16 +22,17 @@ lambda=0
 learning_rate=0.001
 learning_rate_search=false
 decay_rate=0.99
+lr_and_decay_search=false
 sparse_weight=false
 add_immediately=false
 #testing
 test_file=/usr0/home/gschoenh/imnet
 perform_test=true
 num_epochs_per_eval=1
-num_test_data=100
+num_test_data=500
 out_cols="epochs:train01:trainEntropy:trainObj:test01:time:waitPercentage"
 num_train_eval=500
-num_test_eval=100
+num_test_eval=500
 #checkpoint/restart
 use_weight_file=false
 weight_file=/tank/projects/biglearning/jinlianw/data/mlr_data/imagenet_llc.weight
@@ -182,6 +183,7 @@ GLOG_logtostderr=true \
     --learning_rate=$learning_rate \
     --learning_rate_search=$learning_rate_search \
     --decay_rate=$decay_rate \
+    --lr_and_decay_search=$lr_and_decay_search \
     --sparse_weight=${sparse_weight}\
     --add_immediately=${add_immediately} \
     --test_file=$test_file \
