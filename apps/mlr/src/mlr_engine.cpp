@@ -19,6 +19,7 @@
 #include "gstd/src/Printer.h"
 #include "gstd/src/ex.h"
 #include "gstd/src/Timer.h"
+#include "updateScheduler.hpp"
 
 using namespace msii810161816;
 
@@ -171,7 +172,6 @@ void MLREngine::InitWeights(const std::string& weight_file) {
 void MLREngine::Start() {
   //register thread
   petuum::PSTableGroup::RegisterThread();
-
   // Initialize some more values: why are these initialized locally and some are initialized as member vars in the constructor??? (I get it for thread_id ...)
   int thread_id = thread_counter_++;
   int client_id = FLAGS_client_id;
@@ -188,7 +188,6 @@ void MLREngine::Start() {
   if (num_test_eval == 0) {
     num_test_eval = num_test_data_;
   }
-
   //initialize tables
   if (thread_id == 0) {
     loss_table_ =
@@ -213,7 +212,6 @@ void MLREngine::Start() {
     }
     petuum::PSTableGroup::GlobalBarrier();
   }
-
   //initialize the solver
   std::unique_ptr<AbstractMLRSGDSolver> mlr_solver;
   if (num_labels_ == 2) {
@@ -265,9 +263,13 @@ void MLREngine::Start() {
   // test set is always global (duplicated on all clients) except in custom_imnet format
   test_workload_mgr_config.global_data = (read_format_ == "custom_imnet")  ? false : true;
   petuum::ml::WorkloadManager test_workload_mgr(test_workload_mgr_config);
+  UpdateScheduler rowScheduler(FLAGS_communication_factor, FLAGS_virtual_staleness, ((feature_dim_ - 1) / w_table_num_cols_ ) + 1);
 
   // Start checkpoint timer: It's reset after every check-pointing (saving to disk).
   petuum::HighResolutionTimer checkpoint_timer;
+//////////////////
+gstd::Timer t;
+t.reset();
 
   //initialize the model
   float decay_rate = FLAGS_decay_rate;
@@ -296,6 +298,9 @@ void MLREngine::Start() {
 
       if (workload_mgr.IsEndOfBatch()) {
         STATS_APP_ACCUM_COMP_END();
+///////////////
+//if(thread_id == 0)
+//LOG(INFO) << client_id << " is starting push for epoch " << epoch+1 << " total time is " << t.t(false);
         mlr_solver->push();
         if(!workload_mgr.IsEnd())
 	{
@@ -310,8 +315,17 @@ void MLREngine::Start() {
 
     CHECK_EQ(0, batch_counter % num_batches_per_epoch);
     petuum::PSTableGroup::Clock();
+///////////////
+//if(thread_id == 0)
+//LOG(INFO) << client_id << " has finished clock for epoch " << epoch+1 << " total time is " << t.t(false);
     STATS_APP_ACCUM_COMP_END();
-    mlr_solver->pull();
+    if(FLAGS_virtual_staleness != -1)
+      mlr_solver->pull(rowScheduler.next());
+    else
+      mlr_solver->pull();
+///////////////
+//if(thread_id == 0)
+//LOG(INFO) << client_id << " has finished pull for epoch " << epoch+1 << " total time is " << t.t(false);
     STATS_APP_ACCUM_COMP_BEGIN();
     
     //one error eval
@@ -320,10 +334,14 @@ void MLREngine::Start() {
       petuum::HighResolutionTimer eval_timer;
       ComputeTrainError(mlr_solver.get(), &workload_mgr_train_error,
                         num_train_eval_, eval_counter, &predict_buff);
+//////////////
+double val1 = eval_timer.elapsed();
       if (perform_test_) {
         ComputeTestError(mlr_solver.get(), &test_workload_mgr,
                          num_test_eval, eval_counter, &predict_buff);
       }
+//////////////
+double val2 = eval_timer.elapsed();
       if (client_id == 0 && thread_id == 0) {
         petuum::UpdateBatch<float> update_batch(4);
         update_batch.UpdateSet(0, kColIdxLossTableEpoch, epoch + 1);
@@ -331,10 +349,14 @@ void MLREngine::Start() {
         update_batch.UpdateSet(2, kColIdxLossTableTime, total_timer.elapsed());
         update_batch.UpdateSet(3, kColIdxLossTableRegLoss, mlr_solver->EvaluateL2RegLoss());
         loss_table_.BatchInc(eval_counter, update_batch);
-
+//////////////
+double val3 = eval_timer.elapsed();
+double val4 = 0;
         if (eval_counter > loss_table_staleness) {
           // Print the last eval info to overcome staleness.
           LOG(INFO) << PrintOneEval(eval_counter - loss_table_staleness - 1);
+//////////////
+val4 = eval_timer.elapsed();
           if (checkpoint_timer.elapsed() > num_secs_per_checkpoint) {
             petuum::HighResolutionTimer save_disk_timer;
             LOG(INFO) << "SaveLoss now...";
@@ -345,8 +367,9 @@ void MLREngine::Start() {
                       << save_disk_timer.elapsed();
           }
         }
+////////////////////
         LOG(INFO) << "Eval #" << eval_counter << " finished in "
-                  << eval_timer.elapsed();
+                  << " val1 " << val1 << " val2 " << val2 << " val3 " << val3 << " val4 " << val4 << "final" << eval_timer.elapsed();
       }
       ++eval_counter;
     }
@@ -372,8 +395,14 @@ void MLREngine::Start() {
         total_timer.elapsed());
     loss_table_.Inc(eval_counter, kColIdxLossTableRegLoss,
         mlr_solver->EvaluateL2RegLoss());
+/////////////////
+//LOG(INFO) << "Before printalleval " << checkpoint_timer.elapsed();
     LOG(INFO) << std::endl << PrintAllEval(eval_counter);
+/////////////////
+//LOG(INFO) << "Before printfinaleval " << checkpoint_timer.elapsed();
     LOG(INFO) << "Final eval: " << PrintOneEval(eval_counter);
+/////////////////
+//LOG(INFO) << "after printalleval " << checkpoint_timer.elapsed();
     SaveLoss(eval_counter);
     SaveWeights(mlr_solver.get());
   }
@@ -434,7 +463,11 @@ void MLREngine::ComputeTestError(
 std::string MLREngine::PrintOneEval(int32_t ith_eval) {
   std::stringstream output;
   petuum::RowAccessor row_acc;
+//////////////
+gstd::Timer t;
   const auto& loss_row = loss_table_.Get<petuum::DenseRow<float> >(ith_eval, &row_acc);
+/////////////
+//LOG(INFO) << "intermediate get counter is " << t.t(false) << " on row " << ith_eval;
   std::string test_info;
   if (perform_test_) {
     CHECK_LT(0, static_cast<int>(loss_row[kColIdxLossTableNumEvalTest]));
@@ -475,7 +508,11 @@ std::string MLREngine::PrintAllEval(int32_t up_to_ith_eval) {
   }
   for (int i = 0; i <= up_to_ith_eval; ++i) {
     petuum::RowAccessor row_acc;
+/////////////////
+gstd::Timer t;
     const auto &loss_row = loss_table_.Get<petuum::DenseRow<float> >(i, &row_acc);
+/////////////////
+//LOG(INFO) << "final get counter is " << t.t(false) << " on row " << i;
     std::string test_info;
     if (perform_test_) {
       CHECK_LT(0, static_cast<int>(loss_row[kColIdxLossTableNumEvalTest]));

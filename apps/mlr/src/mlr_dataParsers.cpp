@@ -182,7 +182,7 @@ namespace mlr
 			std::ifstream file;
 			gstd::check(gstd::file::open(&file, path), "Failed to open file " + path);
 			std::string line = "";
-			LOG(INFO) << "starting read loop\n";
+//			LOG(INFO) << "starting read loop\n";
 			while(std::getline(file, line))
 			{
 				/*if (file.eof() && line == "")
@@ -200,7 +200,7 @@ namespace mlr
 				res.push_back(resLine);
 			}
 			file.clear();
-			LOG(INFO) << "finished read loop with " << res.size() << " results and a random data point has " << res[gstd::Rand::i(250)].size() << " elements.\n";
+//			LOG(INFO) << "finished read loop with " << res.size() << " results and a random data point has " << res[gstd::Rand::i(250)].size() << " elements.\n";
 			gstd::check(gstd::file::close(&file), "Failed to close file " + path);
 			return res;
 		}		
@@ -233,7 +233,7 @@ namespace mlr
 					firstPoint = firstDataPointWithinFileId;
 				if(i==lastDataPointFileId)
 					lastPoint = lastDataPointWithinFileId;
-				LOG(INFO) << "clientID " << clientId << " starting data point file " << i << " at point " << firstPoint << " and finishing at point " << lastPoint << "\n";
+//				LOG(INFO) << "clientID " << clientId << " starting data point file " << i << " at point " << firstPoint << " and finishing at point " << lastPoint << "\n";
 				char* buffer = new char[20];
 				sprintf(buffer, "%07d", fileSize);
 				std::string fileSizeString(buffer);
@@ -250,7 +250,7 @@ namespace mlr
 				//personDataRaw = gstd::vector::shuffle(personDataRaw);
 				//nonPersonDataRaw = gstd::vector::shuffle(nonPersonDataRaw);
 				/////////////////////////
-				LOG(INFO) << "Part 1: " << gstd::Timer::inst.t(false) << "\n";
+//				LOG(INFO) << "Part 1: " << gstd::Timer::inst.t(false) << "\n";
 				//int_32t dataSize = (int_32t)personDataRaw.size();
 				for(int j=firstPoint; j <=lastPoint;j++)
 				{
@@ -263,7 +263,7 @@ namespace mlr
 						petuumFeatVec.SetFeatureVal(k, nonPersonDataRaw[j][k]);
 					features->push_back(petuumFeatVec);*/
 				}
-				LOG(INFO) << "Finished files in time " << gstd::Timer::inst.t(false) << "\n";
+//				LOG(INFO) << "Finished files in time " << gstd::Timer::inst.t(false) << "\n";
 			}
 			CHECK((int)features->size() == numData / numClients);
 		}

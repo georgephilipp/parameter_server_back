@@ -50,6 +50,9 @@ public:
   // Write pending updates to PS
   void push();
 
+  //Read fresh values from PS for a specified set of rows
+  void pull(RowUpdateItem item);
+
   //Read fresh values from PS
   void pull();
 

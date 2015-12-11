@@ -68,6 +68,12 @@ void MLRSGDSolver::push()
   RefreshParamFun_(*this);
 }
 
+void MLRSGDSolver::pull(RowUpdateItem item)
+{
+  LOG(FATAL) << "not implemented";
+}
+
+
 void MLRSGDSolver::pull()
 {
   RefreshParamFun_(*this);

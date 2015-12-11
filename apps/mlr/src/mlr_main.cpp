@@ -33,6 +33,8 @@ DEFINE_int32(num_epochs, 1, "Number of data sweeps.");
 DEFINE_int32(num_batches_per_epoch, 10, "Since we Clock() at the end of each batch, "
     "num_batches_per_epoch is effectively the number of clocks per epoch (iteration)");
 DEFINE_bool(ignore_nan, false, "If true, we place nan values with 0");
+DEFINE_int32(communication_factor, 1, "Number of data sweeps.");
+DEFINE_int32(virtual_staleness, 1, "Number of data sweeps.");
 // Model
 DEFINE_double(lambda, 0.1, "L2 regularization parameter, only used for binary LR.");
 DEFINE_double(learning_rate, 0.1, "Initial step size");
@@ -87,6 +89,9 @@ int main(int argc, char *argv[]) {
 	  LOG(INFO) << "num_train_data: " << FLAGS_num_train_data << "\n";
 	  LOG(INFO) << "num_epochs: " << FLAGS_num_epochs << "\n";
 	  LOG(INFO) << "num_batches_per_epoch: " << FLAGS_num_batches_per_epoch << "\n";
+	  LOG(INFO) << "ignore_nan: " << FLAGS_ignore_nan << "\n";
+	  LOG(INFO) << "communication_factor: " << FLAGS_communication_factor << "\n";
+	  LOG(INFO) << "virtual_staleness: " << FLAGS_virtual_staleness << "\n";
 	  LOG(INFO) << "lambda: " << FLAGS_lambda << "\n";
 	  LOG(INFO) << "learning_rate: " << FLAGS_learning_rate << "\n";  
 	  LOG(INFO) << "decay_rate: " << FLAGS_decay_rate << "\n";

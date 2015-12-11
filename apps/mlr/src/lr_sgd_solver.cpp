@@ -13,6 +13,8 @@
 #include "gstd/src/Vector.h"
 #include "gstd/src/Printer.h"
 #include "gstd/src/ex.h"
+#include "updateScheduler.hpp"
+#include <petuum_ps_common/include/system_gflags_declare.hpp>
 
 using namespace msii810161816;
 // DW: remove
@@ -148,6 +150,42 @@ void LRSGDSolver::push() {
 
   //petuum::PSTableGroup::Clock();
 }
+
+
+void LRSGDSolver::pull(RowUpdateItem item)
+{
+  int num_full_rows = feature_dim_ / w_table_num_cols_;
+  std::vector<float>& w_cache_vec = w_cache_.GetVector();
+  std::vector<float> w_cache(w_table_num_cols_);
+  int currentRow = item.first;
+//////////////
+//if(FLAGS_client_id == 0)
+//LOG(INFO) << "client " << FLAGS_client_id << " pulling from row " << item.first << " and number of rows is " << item.numRows;
+  for(int i=0;i<item.numRows;i++)
+  {
+    if(currentRow == num_full_rows)
+    {
+      int num_cols_last_row = feature_dim_ - num_full_rows * w_table_num_cols_;
+      std::vector<float> w_cache(w_table_num_cols_);
+      petuum::RowAccessor row_acc;
+      const auto& r = w_table_.Get<petuum::DenseRow<float>>(num_full_rows, &row_acc);
+      r.CopyToVector(&w_cache);
+      std::copy(w_cache.begin(), w_cache.begin() + num_cols_last_row,
+        w_cache_vec.begin() + num_full_rows * w_table_num_cols_);
+      currentRow = 0;
+    }
+    else
+    {
+      petuum::RowAccessor row_acc;
+      const auto& r = w_table_.Get<petuum::DenseRow<float>>(currentRow, &row_acc);
+      r.CopyToVector(&w_cache);
+      std::copy(w_cache.begin(), w_cache.end(),
+        w_cache_vec.begin() + currentRow * w_table_num_cols_);
+      currentRow++;
+    }
+  }
+}
+
 
 void LRSGDSolver::pull() {
   // Read w from the PS.

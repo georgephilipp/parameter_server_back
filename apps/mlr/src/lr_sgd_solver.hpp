@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <vector>
 #include "abstract_mlr_sgd_solver.hpp"
+#include "updateScheduler.hpp"
 
 namespace mlr {
 
@@ -48,6 +49,9 @@ public:
 
   // Write pending updates to PS
   void push();
+
+  //Read fresh values from PS for a specified set of rows
+  void pull(RowUpdateItem item);
 
   //Read fresh values from PS
   void pull();

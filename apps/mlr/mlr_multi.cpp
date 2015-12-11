@@ -43,10 +43,13 @@ DECLARE_int32(num_epochs);
 DECLARE_int32(num_batches_per_epoch);
 DECLARE_int32(num_batches_per_clock);
 DECLARE_bool(ignore_nan);
+DECLARE_int32(communication_factor);
+DECLARE_int32(virtual_staleness);
 DECLARE_string(parm_file);
 DECLARE_double(learning_rate);
 DECLARE_bool(learning_rate_search);
 DECLARE_double(decay_rate);
+DECLARE_bool(lr_and_decay_search);
 DECLARE_int32(num_epochs_per_eval);
 DECLARE_bool(sparse_weight);
 DECLARE_double(lambda);
@@ -71,12 +74,15 @@ DEFINE_int32(num_batches_per_epoch, 10, "Since we Clock() at the end of each bat
     "num_batches_per_epoch is effectively the number of clocks per epoch (iteration)");
 DEFINE_int32(num_batches_per_clock, 1000000000, "doesn't do anything yet");
 DEFINE_bool(ignore_nan, false, "if this is true, replace nan by 0");
+DEFINE_int32(communication_factor, -1, "if this is not -1, then we introduce a virtual communication barrier of length this*batchlength");
+DEFINE_int32(virtual_staleness, -1, "if this is not -1, then we introduce allow this staleness value within the virtual communication barrier");
 // Model
 DEFINE_string(parm_file, "", "Input parameter file");
 DEFINE_double(lambda, 0.1, "L2 regularization parameter, only used for binary LR.");
 DEFINE_double(learning_rate, 0.1, "Initial step size");
+DEFINE_bool(learning_rate_search, false, "if true, then learning rate is optimizes with binary interval search in log space");
 DEFINE_double(decay_rate, 1, "multiplicative decay");
-DEFINE_bool(learning_rate_search, false, "if true, then learning rate is optimizes with binary interval search");
+DEFINE_bool(lr_and_decay_search, false, "if true, then learning rate and decay rate is optimizes with binary interval search in log space / loglog space respectively");
 DEFINE_bool(sparse_weight, false, "Use sparse feature for model parameters");
 DEFINE_bool(add_immediately, false, "Add computed updates to the feature vector immediately");
 //Testing
@@ -114,6 +120,8 @@ const int32_t kDenseRowFloatTypeID = 0;
 class IntervalSearchController
 {
 public:
+    IntervalSearchController() {}
+
     IntervalSearchController(
         double startTop, 
         double startBottom, 
@@ -260,12 +268,41 @@ public:
         return centerVal;
     }
 
+    gstd::trial<double> getBound()
+    {
+        gstd::trial<double> res;
+        if( next == "initMiddle" )
+        {
+            res.success = true;
+            res.result = topVal;
+            if(topVal < bottomVal)
+                res.result = bottomVal;
+        }
+        else if( next == "initBottom" )
+            res.success = false;
+        else if( next == "initTop" )
+            res.success = false;
+        else if( next == "top" )
+        {
+            res.success = true;
+            res.result = topVal;
+        }
+        else if(next == "bottom")
+        {
+            res.success = true;
+            res.result = bottomVal;
+        }
+        else
+            gstd::error("unknown next value");
+        return res;
+    }
+
     std::vector<std::vector<std::string> > getLog()
     {
 	return searchLog;
     }
     
-private:
+public:
     double pointTop;
     double pointCenter;
     double pointBottom;
@@ -287,6 +324,8 @@ public:
 	uint64_t server_bandwidth_mbps;
 	int32_t table_staleness;
 	std::string consistency_model;
+        int32_t communication_factor;
+	int32_t virtual_staleness;
 	bool add_immediately;
 	int32_t num_batches_per_clock;
 	int32_t num_epochs;
@@ -302,6 +341,8 @@ public:
         server_bandwidth_mbps = FLAGS_server_bandwidth_mbps;
         table_staleness = FLAGS_table_staleness;
         consistency_model = FLAGS_consistency_model;
+	communication_factor = FLAGS_communication_factor;
+	virtual_staleness = FLAGS_virtual_staleness;
 	add_immediately = FLAGS_add_immediately;
         num_batches_per_clock = FLAGS_num_batches_per_clock;
 	num_epochs = FLAGS_num_epochs;
@@ -320,6 +361,8 @@ public:
         FLAGS_server_bandwidth_mbps = server_bandwidth_mbps;
         FLAGS_table_staleness = table_staleness;
         FLAGS_consistency_model = consistency_model;
+	FLAGS_communication_factor = communication_factor;
+	FLAGS_virtual_staleness = virtual_staleness;
 	FLAGS_add_immediately = add_immediately;
         FLAGS_num_batches_per_clock = num_batches_per_clock;
 	FLAGS_num_epochs = num_epochs;
@@ -335,6 +378,8 @@ public:
         outSuffix << ".SB" << server_bandwidth_mbps;
         outSuffix << ".TS" << table_staleness;
         outSuffix << ".CM" << consistency_model;
+	outSuffix << ".CF" << communication_factor;
+	outSuffix << ".VS" << virtual_staleness;
         outSuffix << ".AI" << add_immediately;
         outSuffix << ".BPC" << num_batches_per_clock;
         outSuffix << ".NE" << num_epochs;
@@ -368,6 +413,14 @@ public:
 	else if(argname == "consistency_model")
 	{
 		consistency_model = argval;
+	}
+	else if(argname == "communication_factor")
+	{
+		communication_factor = std::stoi(argval);
+	}
+	else if(argname == "virtual_staleness")
+	{
+		virtual_staleness = std::stoi(argval);
 	}
 	else if(argname == "add_immediately")
 	{
@@ -417,6 +470,8 @@ public:
 		res.push_back("server_bandwidth_mbps");
 		res.push_back("table_staleness");
 		res.push_back("consistency_model");
+		res.push_back("communication_factor");
+		res.push_back("virtual_staleness");
 		res.push_back("add_immediately");
 		res.push_back("num_batches_per_clock");
 		res.push_back("num_epochs");
@@ -435,6 +490,8 @@ public:
 		res.push_back(gstd::Printer::p(server_bandwidth_mbps));
 		res.push_back(gstd::Printer::p(table_staleness));
 		res.push_back(consistency_model);
+		res.push_back(gstd::Printer::p(communication_factor));
+		res.push_back(gstd::Printer::p(virtual_staleness));
 		res.push_back(gstd::Printer::p(add_immediately));
 		res.push_back(gstd::Printer::p(num_batches_per_clock));
 		res.push_back(gstd::Printer::p(num_epochs));
@@ -617,6 +674,8 @@ void run()
 "num_epochs=" + printInt(FLAGS_num_epochs) + "\n"
 "num_batches_per_epoch=" + printInt(FLAGS_num_batches_per_epoch) + "\n"
 "ignore_nan=" + printBool(FLAGS_ignore_nan) + "\n"
+"communication_factor=" + printInt(FLAGS_communication_factor) + "\n"
+"virtual_staleness=" + printInt(FLAGS_virtual_staleness) + "\n"
 "#model\n"
 "lambda=" + printDouble(FLAGS_lambda) + "\n"
 "learning_rate=" + printDouble(FLAGS_learning_rate) + "\n"
@@ -772,6 +831,8 @@ void run()
 "    --num_epochs=$num_epochs \\\n"
 "    --num_batches_per_epoch=$num_batches_per_epoch \\\n"
 "    --ignore_nan=$ignore_nan \\\n"
+"    --communication_factor=$communication_factor \\\n"
+"    --virtual_staleness=$virtual_staleness \\\n"
 "    --lambda=$lambda \\\n"
 "    --learning_rate=$learning_rate \\\n"
 "    --decay_rate=$decay_rate \\\n"
@@ -813,9 +874,11 @@ bool errorBasedStoppageCriterion(std::vector<std::string> row, double thresh)
         return false;
 }
     
-std::map<int32_t, double> topMuMap = {{500, 0.01}, {5000, 0.01}, {50000, 0.01}, {500000, 0.01}};
-std::map<int32_t, double> bottomMuMap = {{500, 0.001}, {5000, 0.001}, {50000, 0.001}, {500000, 0.001}};
-std::map<int32_t, double> targetErrorMap = {{500, 0.37}, {5000, 0}, {50000, 0}, {500000, 0}};
+std::map<int32_t, double> topMuMap = {{500, 0.1}, {5000, 0.1}, {50000, 0.1}, {500000, 0.1}};
+std::map<int32_t, double> bottomMuMap = {{500, 0.01}, {5000, 0.01}, {50000, 0.01}, {500000, 0.01}};
+std::map<int32_t, double> topRateMap = {{500, 0.99}, {5000, 0.99}, {50000, 0.99}, {500000, 0.99}};
+std::map<int32_t, double> bottomRateMap = {{500, 0.999}, {5000, 0.999}, {50000, 0.999}, {500000, 0.999}};
+std::map<int32_t, double> targetErrorMap = {{500, 0.37}, {5000, 0.34}, {50000, 0.33}, {500000, 0.32}};
 
 IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, int32_t>& muEpochMap)
 {
@@ -825,23 +888,37 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
         return errorBasedStoppageCriterion(row, targetError);
     };
 
-    double topMu = topMuMap[ps.num_train_data];
-    muEpochMap[topMu] = ps.num_epochs;
-    ps.learning_rate = topMu;
-    ps.set();
-    run();
-    std::map<std::string, std::string> output = readOutFiles(boundErrorBasedStoppageCriterion);
-    int32_t numTopEpochsNeeded = std::stoi(output["epochs"]);
-    
-    double bottomMu = bottomMuMap[ps.num_train_data];
-    muEpochMap[bottomMu] = ps.num_epochs;
-    ps.learning_rate = bottomMu;
-    ps.set();
-    run();
-    output = readOutFiles(boundErrorBasedStoppageCriterion);
-    int32_t numBottomEpochsNeeded  = std::stoi(output["epochs"]);
+    double topMu = 0;
+    double bottomMu = 0;
+    int32_t numTopEpochsNeeded = 0;
+    int32_t numBottomEpochsNeeded = 0;
+    while(1)
+    {
+	topMu = topMuMap[ps.num_train_data];
+	if(FLAGS_virtual_staleness != -1)
+		topMu = topMu / ((double)(FLAGS_virtual_staleness+1));
+	muEpochMap[topMu] = ps.num_epochs;
+	ps.learning_rate = topMu;
+	ps.set();
+	LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
+	run();
+	std::map<std::string, std::string> output = readOutFiles(boundErrorBasedStoppageCriterion);
+	numTopEpochsNeeded = std::stoi(output["epochs"]);
 
-    gstd::check(numTopEpochsNeeded < ps.num_epochs || numBottomEpochsNeeded < ps.num_epochs, "could not converge on either starting config in mu search");
+	bottomMu = bottomMuMap[ps.num_train_data];
+	if(FLAGS_virtual_staleness != -1)
+		bottomMu = bottomMu / ((double)(FLAGS_virtual_staleness+1));
+	muEpochMap[bottomMu] = ps.num_epochs;
+	ps.learning_rate = bottomMu;
+	ps.set();
+	LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
+	run();
+	output = readOutFiles(boundErrorBasedStoppageCriterion);
+	numBottomEpochsNeeded  = std::stoi(output["epochs"]);
+	if(numTopEpochsNeeded < ps.num_epochs || numBottomEpochsNeeded < ps.num_epochs)
+		break;
+	ps.num_epochs = 2*ps.num_epochs;
+    }
 
     int32_t newEpochNumber = numBottomEpochsNeeded + 1;
     if(numTopEpochsNeeded < numBottomEpochsNeeded)
@@ -857,8 +934,9 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
         muEpochMap[nextMu] = ps.num_epochs;
         ps.learning_rate = nextMu;
         ps.set();
+        LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
         run();
-        output = readOutFiles(boundErrorBasedStoppageCriterion);
+        std::map<std::string, std::string> output = readOutFiles(boundErrorBasedStoppageCriterion);
         if(controller.consume(std::stod(output["epochs"])))
         {
             return controller;
@@ -867,9 +945,82 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
     }
 }
     
+IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std::map<double, int32_t> >& muDecayEpochMap, std::map<double, IntervalSearchController>& muControllers)
+{
+	int32_t epochsInitial = ps.num_epochs;
+
+	double targetError = targetErrorMap[ps.num_train_data];
+	std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError](std::vector<std::string> row)
+	{
+		return errorBasedStoppageCriterion(row, targetError);
+	};
+
+	double topRate = topRateMap[ps.num_train_data];
+	if(FLAGS_virtual_staleness != -1)
+		topRate = pow(topRate, 1/((double)(FLAGS_virtual_staleness+1)));
+	std::map<double, int32_t> muEpochMap;
+	ps.decay_rate = topRate;
+	LOG(INFO) << "\n\n\n\n\n LR AND DECAY SEARCH. Running learning rate with search rate " << ps.decay_rate << " and starting epoch number " << ps.num_epochs << "\n\n\n\n\n";
+	IntervalSearchController muController = runLearningRateSearch(ps, muEpochMap);
+	double numTopEpochsNeeded = muController.getCenterVal();
+	muControllers[topRate] = muController;
+	muDecayEpochMap[topRate] = muEpochMap;
+	
+	double bottomRate = bottomRateMap[ps.num_train_data];
+	if(FLAGS_virtual_staleness != -1)
+		bottomRate = pow(bottomRate, 1/((double)(FLAGS_virtual_staleness+1)));
+	muEpochMap.clear();
+	ps.decay_rate = bottomRate;
+	LOG(INFO) << "\n\n\n\n\n LR AND DECAY SEARCH. Running learning rate with search rate " << ps.decay_rate << " and starting epoch number " << ps.num_epochs << "\n\n\n\n\n";
+	muController = runLearningRateSearch(ps, muEpochMap);
+	double numBottomEpochsNeeded = muController.getCenterVal();
+	muControllers[bottomRate] = muController;
+	muDecayEpochMap[bottomRate] = muEpochMap;
+
+	IntervalSearchController controller(log10(-log10(topRate)), log10(-log10(bottomRate)), numTopEpochsNeeded, numBottomEpochsNeeded, log10(1.01));
+
+	while(1)
+	{
+		double nextRate = pow(10,-pow(10, controller.get()));
+		ps.decay_rate = nextRate;
+		//gstd::trial<double> epochBound = controller.getBound();
+		//if(epochBound.success)
+		//	ps.num_epochs = (int)std::round(1.5*epochBound.result);
+		//else
+			ps.num_epochs = epochsInitial;
+		muEpochMap.clear();
+		LOG(INFO) << "\n\n\n\n\n LR AND DECAY SEARCH. Running learning rate with search rate " << ps.decay_rate << " and starting epoch number " << ps.num_epochs << "\n\n\n\n\n";
+		muController = runLearningRateSearch(ps, muEpochMap);
+		double numEpochsNeeded = muController.getCenterVal();
+		muControllers[nextRate] = muController;
+		muDecayEpochMap[nextRate] = muEpochMap;
+		if(controller.consume(numEpochsNeeded))
+		{
+			return controller;
+		}
+	}
+}
 
 int main(int argc, char *argv[]) 
 {
+
+/////////////////////////////////////
+/*IntervalSearchController c(2, 1, 100, 50, 0.01);
+gstd::Rand::randomize();
+while(1)
+{
+    double next = c.get();
+    double res = 100*gstd::Rand::d(1);
+    gstd::trial<double> bound = c.getBound();
+    gstd::Printer::c("next is " + c.next + " nextval is " + gstd::Printer::p(next) + " res is " + gstd::Printer::p(res) + " bound succ is " + gstd::Printer::p(bound.success) + " bound res is " + gstd::Printer::p(bound.result));
+    gstd::Printer::vc(std::vector<double>({c.topVal, c.centerVal, c.bottomVal, c.pointTop, c.pointCenter, c.pointBottom}));
+    if(c.consume(res))
+	return 0;
+}*/
+
+
+
+
 	std::function<bool(std::vector<std::string>)> defaultStoppageCriterion = [](std::vector<std::string> inRow)
 	{
 		return false;
@@ -880,7 +1031,7 @@ int main(int argc, char *argv[])
     google::InitGoogleLogging(argv[0]);
     CHECK(!FLAGS_sparse_weight) << "Not yet supported!";    
     gstd::check(!gstd::file::exists({FLAGS_output_file_prefix})[0], "outfile path exists");
-    gstd::check(!gstd::file::exists({FLAGS_output_file_prefix + "_verbose"})[0], "verbose outfile path exists");
+    //gstd::check(!gstd::file::exists({FLAGS_output_file_prefix + "_verbose"})[0], "verbose outfile path exists");
     std::vector<std::string> outFields;
     std::vector<std::vector<std::string> > parmContent;
 	if(FLAGS_parm_file != "")
@@ -897,6 +1048,7 @@ int main(int argc, char *argv[])
     resHeader.push_back("perform_test");
     res.push_back(resHeader);
     gstd::Writer::rs<std::string>(ps.get_output_file_prefix(), {resHeader}, " ", false, std::ios::app);
+    gstd::Writer::rs<std::string>(ps.get_output_file_prefix(), {{}}, " ", false, std::ios::trunc);
     for(int i=1;i<(int)parmContent.size();i++)
     {
         gstd::check(parmContentRowSize == (int)parmContent[i].size(), "parms are not a table");
@@ -904,7 +1056,42 @@ int main(int argc, char *argv[])
             ps.consume(parmContent[0][j], parmContent[i][j]);
 
         std::function<bool(std::vector<std::string>)> stoppageCriterionUsed = defaultStoppageCriterion;
-	if(FLAGS_learning_rate_search)
+	if(FLAGS_lr_and_decay_search)
+	{
+		gstd::check(!FLAGS_learning_rate_search, "if FLAGS_lr_and_decay_search true, FLAGS_learning_rate_search must be false");
+		std::map<double, std::map<double, int32_t> > muDecayEpochMap;
+		std::map<double, IntervalSearchController> muControllers;
+		IntervalSearchController controller = runLRandDecaySearch(ps, muDecayEpochMap, muControllers);
+		ps.decay_rate = pow(10, -pow(10, controller.getPointCenter()));
+		ps.learning_rate = pow(10, muControllers[ps.decay_rate].getPointCenter());
+		ps.num_epochs = muDecayEpochMap[ps.decay_rate][ps.learning_rate];
+		ps.set();
+		double targetError = targetErrorMap[ps.num_train_data];
+		std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError](std::vector<std::string> row)
+		{
+			return errorBasedStoppageCriterion(row, targetError);
+		};
+		stoppageCriterionUsed = boundErrorBasedStoppageCriterion;
+		
+		//write the log
+		std::vector<std::vector<std::string> > searchLog;
+		searchLog.push_back(ps.getHeader());
+		searchLog.push_back(ps.getRow());
+		std::vector<std::vector<std::string> > masterLog = controller.getLog();
+		searchLog.insert(searchLog.end(), masterLog.begin(), masterLog.end());
+		searchLog.push_back({"best rate is " + gstd::Printer::p(ps.decay_rate)});
+		std::vector<double> rates = gstd::map::keys(muControllers);
+		std::vector<IntervalSearchController> rateControllers = gstd::map::values(muControllers);
+		int numRates = (int)rates.size();
+		for(int j=0;j<numRates;j++)
+		{
+			std::vector<std::vector<std::string> > rateLog = rateControllers[j].getLog();
+			searchLog.push_back({"log for rate " + gstd::Printer::p(rates[j]) + " with best mu " + gstd::Printer::p(rateControllers[j].getPointCenter()) + " is:"});
+			searchLog.insert(searchLog.end(), rateLog.begin(), rateLog.end());
+		}
+		gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::trunc);
+	}
+	else if(FLAGS_learning_rate_search)
 	{
             std::map<double, int32_t> muEpochMap;
 	    IntervalSearchController controller = runLearningRateSearch(ps, muEpochMap);
@@ -917,10 +1104,12 @@ int main(int argc, char *argv[])
                 return errorBasedStoppageCriterion(row, targetError);
             };
             stoppageCriterionUsed = boundErrorBasedStoppageCriterion;
+
+            //write the log
             std::vector<std::vector<std::string> > searchLog = controller.getLog();
             searchLog.insert(searchLog.begin(), ps.getRow());
 	    searchLog.insert(searchLog.begin(), ps.getHeader());
-            gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::app);
+            gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::trunc);
 	}
 	else
 	{
