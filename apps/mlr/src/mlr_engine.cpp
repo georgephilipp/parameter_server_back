@@ -45,6 +45,7 @@ MLREngine::MLREngine() : thread_counter_(0) {
   perform_test_ = FLAGS_perform_test;
   num_train_eval_ = FLAGS_num_train_eval;
   process_barrier_.reset(new boost::barrier(FLAGS_num_table_threads));
+  process_barrier_push_.reset(new boost::barrier(FLAGS_num_table_threads));
   std::string meta_file = FLAGS_train_file + ((FLAGS_global_data || FLAGS_force_global_file_names) ? "" : "." + std::to_string(FLAGS_client_id)) + ".meta";
   w_table_num_cols_ = FLAGS_w_table_num_cols;
   petuum::ml::MetafileReader mreader(meta_file);
@@ -237,6 +238,7 @@ void MLREngine::Start() {
   }
   mlr_solver->push();
   mlr_solver->pull();
+  mlr_solver->thread_id = thread_id;
   petuum::PSTableGroup::GlobalBarrier();
 
   //create schedule
@@ -268,8 +270,8 @@ void MLREngine::Start() {
   // Start checkpoint timer: It's reset after every check-pointing (saving to disk).
   petuum::HighResolutionTimer checkpoint_timer;
 //////////////////
-gstd::Timer t;
-t.reset();
+//gstd::Timer t;
+//t.reset();
 
   //initialize the model
   float decay_rate = FLAGS_decay_rate;
@@ -292,6 +294,7 @@ t.reset();
               train_features_[data_idx])),
           train_labels_[data_idx], curr_learning_rate);
           */
+
       mlr_solver->SingleDataSGD(
         *train_features_[data_idx],
         train_labels_[data_idx], curr_learning_rate);
@@ -301,6 +304,21 @@ t.reset();
 ///////////////
 //if(thread_id == 0)
 //LOG(INFO) << client_id << " is starting push for epoch " << epoch+1 << " total time is " << t.t(false);
+        if(num_batches_per_epoch == 1)
+        {
+          if(epoch % 2 == 0)
+          {
+            process_barrier_push_->wait();
+            if(thread_id == 0)
+              process_barrier_.reset(new boost::barrier(FLAGS_num_table_threads));
+          }
+          else
+          {
+            process_barrier_->wait();
+            if(thread_id == 0)
+              process_barrier_push_.reset(new boost::barrier(FLAGS_num_table_threads));
+          }
+        }
         mlr_solver->push();
         if(!workload_mgr.IsEnd())
 	{

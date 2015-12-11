@@ -92,6 +92,8 @@ private:
 
   std::unique_ptr<boost::barrier> process_barrier_;
 
+  std::unique_ptr<boost::barrier> process_barrier_push_;
+
   // ============ PS Tables ============
   petuum::Table<float> loss_table_;
   petuum::Table<float> w_table_;

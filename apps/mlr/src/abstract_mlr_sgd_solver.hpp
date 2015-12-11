@@ -14,6 +14,8 @@ namespace mlr {
 
 class AbstractMLRSGDSolver {
 public:
+  int thread_id;
+
   virtual ~AbstractMLRSGDSolver() { }
 
   // Compute gradient using feature and label and store internally.

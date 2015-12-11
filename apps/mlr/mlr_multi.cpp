@@ -620,7 +620,7 @@ std::map<std::string,std::string> readOutFiles(std::function<bool(std::vector<st
 
 	double waitPercentage = 0;
 
-	for(int i=0; i<FLAGS_num_clients;i++)
+	/*for(int i=0; i<FLAGS_num_clients;i++)
 	{
 		std::vector<std::string> statsFile = gstd::Reader::ls(FLAGS_output_file_prefix + ".stats.yaml." + gstd::Printer::p(i));
 		for(int j=0;j<(int)statsFile.size();j++)
@@ -632,7 +632,7 @@ std::map<std::string,std::string> readOutFiles(std::function<bool(std::vector<st
 				waitPercentage += std::stod(temp[1]) / ((double)FLAGS_num_clients);
 			}
 		}
-	}
+	}*/
 
 	res["waitPercentage"] = gstd::Printer::p(waitPercentage);
 	return res;
@@ -657,7 +657,7 @@ std::vector<std::map<std::string,std::string> > readOutFilesComplete()
 	
 	double waitPercentage = 0;
 
-	for(int i=0; i<FLAGS_num_clients;i++)
+	/*for(int i=0; i<FLAGS_num_clients;i++)
 	{
 		std::vector<std::string> statsFile = gstd::Reader::ls(FLAGS_output_file_prefix + ".stats.yaml." + gstd::Printer::p(i));
 		for(int j=0;j<(int)statsFile.size();j++)
@@ -669,7 +669,7 @@ std::vector<std::map<std::string,std::string> > readOutFilesComplete()
 				waitPercentage += std::stod(temp[1]) / ((double)FLAGS_num_clients);
 			}
 		}
-	}
+	}*/
 
         for(int i=targetHeaderRow+1;i<(int)outFile.size();i++)
 	{
