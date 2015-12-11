@@ -50,6 +50,11 @@ DECLARE_double(learning_rate);
 DECLARE_bool(learning_rate_search);
 DECLARE_double(decay_rate);
 DECLARE_bool(lr_and_decay_search);
+DECLARE_double(top_mu);
+DECLARE_double(bottom_mu);
+DECLARE_double(top_decay_rate);
+DECLARE_double(bottom_decay_rate);
+DECLARE_double(target_error);
 DECLARE_int32(num_epochs_per_eval);
 DECLARE_bool(sparse_weight);
 DECLARE_double(lambda);
@@ -85,6 +90,10 @@ DEFINE_double(decay_rate, 1, "multiplicative decay");
 DEFINE_bool(lr_and_decay_search, false, "if true, then learning rate and decay rate is optimizes with binary interval search in log space / loglog space respectively");
 DEFINE_bool(sparse_weight, false, "Use sparse feature for model parameters");
 DEFINE_bool(add_immediately, false, "Add computed updates to the feature vector immediately");
+DEFINE_double(top_mu, -1, "starting point for searches");
+DEFINE_double(bottom_mu, -1, "starting point for searches");
+DEFINE_double(top_decay_rate, -1, "starting point for searches");
+DEFINE_double(bottom_decay_rate, -1, "starting point for searches");
 //Testing
 DEFINE_string(test_file, "", "The program expects 2 files: test_file, "
     "test_file.meta, test_file must have format specified in read_format "
@@ -99,6 +108,7 @@ DEFINE_int32(num_train_eval, 20, "Use the next num_train_eval train data "
 DEFINE_int32(num_test_eval, 20, "Use the first num_test_eval test data for "
     "intermediate eval. 0 for using all. The final eval will always use all "
     "test data.");
+DEFINE_double(target_error, -1, "Stopping criterion for searches");
 //checkpoint/restart
 DEFINE_bool(use_weight_file, false, "True to use init_weight_file as init");
 DEFINE_string(weight_file, "", "Use this file to initialize weight. "
@@ -330,6 +340,11 @@ public:
 	int32_t num_batches_per_clock;
 	int32_t num_epochs;
 	double lambda;
+	double top_mu;
+	double bottom_mu;
+	double top_decay_rate;
+	double bottom_decay_rate;
+	double target_error;
 	double learning_rate;
 	double decay_rate;
 	int32_t num_batches_per_epoch;
@@ -347,6 +362,11 @@ public:
         num_batches_per_clock = FLAGS_num_batches_per_clock;
 	num_epochs = FLAGS_num_epochs;
         lambda = FLAGS_lambda;
+	top_mu = FLAGS_top_mu;
+	bottom_mu = FLAGS_bottom_mu;
+	top_decay_rate = FLAGS_top_decay_rate;
+	bottom_decay_rate = FLAGS_bottom_decay_rate;
+	target_error = FLAGS_target_error;
         learning_rate = FLAGS_learning_rate;
         decay_rate = FLAGS_decay_rate;
 	num_batches_per_epoch = FLAGS_num_batches_per_epoch;
@@ -367,6 +387,11 @@ public:
         FLAGS_num_batches_per_clock = num_batches_per_clock;
 	FLAGS_num_epochs = num_epochs;
         FLAGS_lambda = lambda;
+	FLAGS_top_mu = top_mu;
+	FLAGS_bottom_mu = bottom_mu;
+	FLAGS_top_decay_rate = top_decay_rate;
+	FLAGS_bottom_decay_rate = bottom_decay_rate;
+	FLAGS_target_error = target_error;
         FLAGS_learning_rate = learning_rate;
         FLAGS_decay_rate = decay_rate;
 	FLAGS_num_batches_per_epoch = num_batches_per_epoch;
@@ -384,6 +409,11 @@ public:
         outSuffix << ".BPC" << num_batches_per_clock;
         outSuffix << ".NE" << num_epochs;
         outSuffix << ".L" << lambda;
+	outSuffix << ".TM" << top_mu;
+	outSuffix << ".BM" << bottom_mu;
+	outSuffix << ".TR" << top_decay_rate;
+	outSuffix << ".BR" << bottom_decay_rate;
+	outSuffix << ".TE" << target_error;
         outSuffix << ".MU" << learning_rate;
         outSuffix << ".MUD" << decay_rate;
 	outSuffix << ".BPE" << num_batches_per_epoch;
@@ -438,6 +468,26 @@ public:
 	{
 		lambda = std::stod(argval);
 	}
+	else if(argname == "top_mu")
+	{
+		top_mu = std::stod(argval);
+	}
+	else if(argname == "bottom_mu")
+	{
+		bottom_mu = std::stod(argval);
+	}
+	else if(argname == "top_decay_rate")
+	{
+		top_decay_rate = std::stod(argval);
+	}
+	else if(argname == "bottom_decay_rate")
+	{
+		bottom_decay_rate = std::stod(argval);
+	}
+	else if(argname == "target_error")
+	{
+		target_error = std::stod(argval);
+	}
 	else if(argname == "learning_rate")
 	{
 		learning_rate = std::stod(argval);
@@ -476,6 +526,11 @@ public:
 		res.push_back("num_batches_per_clock");
 		res.push_back("num_epochs");
 		res.push_back("lambda");
+		res.push_back("top_mu");
+		res.push_back("bottom_mu");
+		res.push_back("top_decay_rate");
+		res.push_back("bottom_decay_rate");
+		res.push_back("target_error");
 		res.push_back("learning_rate");
 		res.push_back("decay_rate");
 		res.push_back("num_batches_per_epoch");
@@ -496,6 +551,11 @@ public:
 		res.push_back(gstd::Printer::p(num_batches_per_clock));
 		res.push_back(gstd::Printer::p(num_epochs));
 		res.push_back(gstd::Printer::p(lambda));
+		res.push_back(gstd::Printer::p(top_mu));
+		res.push_back(gstd::Printer::p(bottom_mu));
+		res.push_back(gstd::Printer::p(top_decay_rate));
+		res.push_back(gstd::Printer::p(bottom_decay_rate));
+		res.push_back(gstd::Printer::p(target_error));
 		res.push_back(gstd::Printer::p(learning_rate));
 		res.push_back(gstd::Printer::p(decay_rate));
 		res.push_back(gstd::Printer::p(num_batches_per_epoch));
@@ -883,15 +943,15 @@ bool errorBasedStoppageCriterion(std::vector<std::string> row, double thresh)
         return false;
 }
     
-std::map<int32_t, double> topMuMap = {{500, 0.01}, {5000, 0.01}, {50000, 0.01}, {500000, 0.01}};
-std::map<int32_t, double> bottomMuMap = {{500, 0.001}, {5000, 0.001}, {50000, 0.001}, {500000, 0.001}};
-std::map<int32_t, double> topRateMap = {{500, 0.99}, {5000, 0.99}, {50000, 0.99}, {500000, 0.99}};
-std::map<int32_t, double> bottomRateMap = {{500, 0.999}, {5000, 0.999}, {50000, 0.999}, {500000, 0.999}};
-std::map<int32_t, double> targetErrorMap = {{500, 0.37}, {5000, 0.34}, {50000, 0.33}, {500000, 0.32}};
+//std::map<int32_t, double> topMuMap = {{500, 0.01}, {528, 0.01}, {5000, 0.01}, {50000, 0.01}, {500000, 0.01}};
+//std::map<int32_t, double> bottomMuMap = {{500, 0.001}, {528, 0.01}, {5000, 0.001}, {50000, 0.001}, {500000, 0.001}};
+//std::map<int32_t, double> topRateMap = {{500, 0.99},{500, 0.01}, {5000, 0.99}, {50000, 0.99}, {500000, 0.99}};
+//std::map<int32_t, double> bottomRateMap = {{500, 0.999}, {5000, 0.999}, {50000, 0.999}, {500000, 0.999}};
+//std::map<int32_t, double> targetErrorMap = {{500, 0.37}, {5000, 0.34}, {50000, 0.33}, {500000, 0.32}};
 
 IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, int32_t>& muEpochMap)
 {
-    double targetError = targetErrorMap[ps.num_train_data];
+    double targetError = FLAGS_target_error;
     std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError](std::vector<std::string> row)
     {
         return errorBasedStoppageCriterion(row, targetError);
@@ -904,7 +964,7 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
     int doubleCounter = 0;
     while(1)
     {
-	topMu = topMuMap[ps.num_train_data];
+	topMu = FLAGS_top_mu;
 	if(FLAGS_virtual_staleness != -1)
 		topMu = topMu / ((double)(FLAGS_virtual_staleness+1));
 	muEpochMap[topMu] = ps.num_epochs;
@@ -915,7 +975,7 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
 	std::map<std::string, std::string> output = readOutFiles(boundErrorBasedStoppageCriterion);
 	numTopEpochsNeeded = std::stoi(output["epochs"]);
 
-	bottomMu = bottomMuMap[ps.num_train_data];
+	bottomMu = FLAGS_bottom_mu;
 	if(FLAGS_virtual_staleness != -1)
 		bottomMu = bottomMu / ((double)(FLAGS_virtual_staleness+1));
 	muEpochMap[bottomMu] = ps.num_epochs;
@@ -965,13 +1025,7 @@ IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std
 {
 	int32_t epochsInitial = ps.num_epochs;
 
-	double targetError = targetErrorMap[ps.num_train_data];
-	std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError](std::vector<std::string> row)
-	{
-		return errorBasedStoppageCriterion(row, targetError);
-	};
-
-	double topRate = topRateMap[ps.num_train_data];
+	double topRate = FLAGS_top_decay_rate;
 	if(FLAGS_virtual_staleness != -1)
 		topRate = pow(topRate, 1/((double)(FLAGS_virtual_staleness+1)));
 	std::map<double, int32_t> muEpochMap;
@@ -991,7 +1045,7 @@ IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std
 	searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(topRate) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " is:"});
 	gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::app);
 	
-	double bottomRate = bottomRateMap[ps.num_train_data];
+	double bottomRate = FLAGS_bottom_decay_rate;
 	if(FLAGS_virtual_staleness != -1)
 		bottomRate = pow(bottomRate, 1/((double)(FLAGS_virtual_staleness+1)));
 	muEpochMap.clear();
@@ -1098,6 +1152,7 @@ while(1)
         gstd::check(parmContentRowSize == (int)parmContent[i].size(), "parms are not a table");
         for(int j=0;j<parmContentRowSize; j++)
             ps.consume(parmContent[0][j], parmContent[i][j]);
+	ps.set();
 
         std::function<bool(std::vector<std::string>)> stoppageCriterionUsed = defaultStoppageCriterion;
 	if(FLAGS_lr_and_decay_search)
@@ -1125,7 +1180,7 @@ while(1)
 		ps.learning_rate = pow(10, muControllers[ps.decay_rate].getPointCenter());
 		ps.num_epochs = muDecayEpochMap[ps.decay_rate][ps.learning_rate];
 		ps.set();
-		double targetError = targetErrorMap[ps.num_train_data];
+		double targetError = FLAGS_target_error;
 		std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError](std::vector<std::string> row)
 		{
 			return errorBasedStoppageCriterion(row, targetError);
@@ -1152,7 +1207,7 @@ while(1)
 	    ps.learning_rate = pow(10,controller.getPointCenter());
             ps.num_epochs = muEpochMap[ps.learning_rate];
             ps.set();
-            double targetError = targetErrorMap[ps.num_train_data];
+            double targetError = FLAGS_target_error;
             std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError](std::vector<std::string> row)
             {
                 return errorBasedStoppageCriterion(row, targetError);
@@ -1167,7 +1222,6 @@ while(1)
 	}
 	else
 	{
-            ps.set();
 	    run();
 	}
 
