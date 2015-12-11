@@ -883,8 +883,8 @@ bool errorBasedStoppageCriterion(std::vector<std::string> row, double thresh)
         return false;
 }
     
-std::map<int32_t, double> topMuMap = {{500, 0.1}, {5000, 0.1}, {50000, 0.1}, {500000, 0.1}};
-std::map<int32_t, double> bottomMuMap = {{500, 0.01}, {5000, 0.01}, {50000, 0.01}, {500000, 0.01}};
+std::map<int32_t, double> topMuMap = {{500, 0.01}, {5000, 0.01}, {50000, 0.01}, {500000, 0.01}};
+std::map<int32_t, double> bottomMuMap = {{500, 0.001}, {5000, 0.001}, {50000, 0.001}, {500000, 0.001}};
 std::map<int32_t, double> topRateMap = {{500, 0.99}, {5000, 0.99}, {50000, 0.99}, {500000, 0.99}};
 std::map<int32_t, double> bottomRateMap = {{500, 0.999}, {5000, 0.999}, {50000, 0.999}, {500000, 0.999}};
 std::map<int32_t, double> targetErrorMap = {{500, 0.37}, {5000, 0.34}, {50000, 0.33}, {500000, 0.32}};
