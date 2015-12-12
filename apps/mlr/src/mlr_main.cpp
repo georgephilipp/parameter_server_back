@@ -33,8 +33,9 @@ DEFINE_int32(num_epochs, 1, "Number of data sweeps.");
 DEFINE_int32(num_batches_per_epoch, 10, "Since we Clock() at the end of each batch, "
     "num_batches_per_epoch is effectively the number of clocks per epoch (iteration)");
 DEFINE_bool(ignore_nan, false, "If true, we place nan values with 0");
-DEFINE_int32(communication_factor, 1, "Number of data sweeps.");
-DEFINE_int32(virtual_staleness, 1, "Number of data sweeps.");
+DEFINE_int32(communication_factor, 1, "Amount of virtual network delay.");
+DEFINE_int32(virtual_staleness, 1, "Amount of staleness within virtual network delay.");
+DEFINE_bool(is_bipartite, false, "Use a bipartite virtual network delay");
 // Model
 DEFINE_double(lambda, 0.1, "L2 regularization parameter, only used for binary LR.");
 DEFINE_double(learning_rate, 0.1, "Initial step size");

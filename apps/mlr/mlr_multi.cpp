@@ -45,6 +45,7 @@ DECLARE_int32(num_batches_per_clock);
 DECLARE_bool(ignore_nan);
 DECLARE_int32(communication_factor);
 DECLARE_int32(virtual_staleness);
+DECLARE_bool(is_bipartite);
 DECLARE_string(parm_file);
 DECLARE_double(learning_rate);
 DECLARE_bool(learning_rate_search);
@@ -81,6 +82,7 @@ DEFINE_int32(num_batches_per_clock, 1000000000, "doesn't do anything yet");
 DEFINE_bool(ignore_nan, false, "if this is true, replace nan by 0");
 DEFINE_int32(communication_factor, -1, "if this is not -1, then we introduce a virtual communication barrier of length this*batchlength");
 DEFINE_int32(virtual_staleness, -1, "if this is not -1, then we introduce allow this staleness value within the virtual communication barrier");
+DEFINE_bool(is_bipartite, false, "is this is true, then virtual staleness only applies within one half of the cluster");
 // Model
 DEFINE_string(parm_file, "", "Input parameter file");
 DEFINE_double(lambda, 0.1, "L2 regularization parameter, only used for binary LR.");
@@ -336,6 +338,7 @@ public:
 	std::string consistency_model;
         int32_t communication_factor;
 	int32_t virtual_staleness;
+	bool is_bipartite;
 	bool add_immediately;
 	int32_t num_batches_per_clock;
 	int32_t num_epochs;
@@ -345,6 +348,7 @@ public:
 	double top_decay_rate;
 	double bottom_decay_rate;
 	double target_error;
+	int32_t num_epochs_per_eval;
 	double learning_rate;
 	double decay_rate;
 	int32_t num_batches_per_epoch;
@@ -358,6 +362,7 @@ public:
         consistency_model = FLAGS_consistency_model;
 	communication_factor = FLAGS_communication_factor;
 	virtual_staleness = FLAGS_virtual_staleness;
+	is_bipartite = FLAGS_is_bipartite;
 	add_immediately = FLAGS_add_immediately;
         num_batches_per_clock = FLAGS_num_batches_per_clock;
 	num_epochs = FLAGS_num_epochs;
@@ -367,6 +372,7 @@ public:
 	top_decay_rate = FLAGS_top_decay_rate;
 	bottom_decay_rate = FLAGS_bottom_decay_rate;
 	target_error = FLAGS_target_error;
+	num_epochs_per_eval = FLAGS_num_epochs_per_eval;
         learning_rate = FLAGS_learning_rate;
         decay_rate = FLAGS_decay_rate;
 	num_batches_per_epoch = FLAGS_num_batches_per_epoch;
@@ -383,6 +389,7 @@ public:
         FLAGS_consistency_model = consistency_model;
 	FLAGS_communication_factor = communication_factor;
 	FLAGS_virtual_staleness = virtual_staleness;
+	FLAGS_is_bipartite = is_bipartite;
 	FLAGS_add_immediately = add_immediately;
         FLAGS_num_batches_per_clock = num_batches_per_clock;
 	FLAGS_num_epochs = num_epochs;
@@ -392,6 +399,7 @@ public:
 	FLAGS_top_decay_rate = top_decay_rate;
 	FLAGS_bottom_decay_rate = bottom_decay_rate;
 	FLAGS_target_error = target_error;
+	FLAGS_num_epochs_per_eval = num_epochs_per_eval;
         FLAGS_learning_rate = learning_rate;
         FLAGS_decay_rate = decay_rate;
 	FLAGS_num_batches_per_epoch = num_batches_per_epoch;
@@ -405,6 +413,7 @@ public:
         outSuffix << ".CM" << consistency_model;
 	outSuffix << ".CF" << communication_factor;
 	outSuffix << ".VS" << virtual_staleness;
+	outSuffix << ".BI" << is_bipartite;
         outSuffix << ".AI" << add_immediately;
         outSuffix << ".BPC" << num_batches_per_clock;
         outSuffix << ".NE" << num_epochs;
@@ -414,6 +423,7 @@ public:
 	outSuffix << ".TR" << top_decay_rate;
 	outSuffix << ".BR" << bottom_decay_rate;
 	outSuffix << ".TE" << target_error;
+	outSuffix << ".EE" << num_epochs_per_eval;
         outSuffix << ".MU" << learning_rate;
         outSuffix << ".MUD" << decay_rate;
 	outSuffix << ".BPE" << num_batches_per_epoch;
@@ -452,6 +462,10 @@ public:
 	{
 		virtual_staleness = std::stoi(argval);
 	}
+	else if(argname == "is_bipartite")
+	{
+		is_bipartite = (argval == "1");
+	}
 	else if(argname == "add_immediately")
 	{
 		add_immediately = (argval == "1");
@@ -488,6 +502,10 @@ public:
 	{
 		target_error = std::stod(argval);
 	}
+	else if(argname == "num_epochs_per_eval")
+	{
+		num_epochs_per_eval = std::stoi(argval);
+	}
 	else if(argname == "learning_rate")
 	{
 		learning_rate = std::stod(argval);
@@ -522,6 +540,7 @@ public:
 		res.push_back("consistency_model");
 		res.push_back("communication_factor");
 		res.push_back("virtual_staleness");
+		res.push_back("is_bipartite");
 		res.push_back("add_immediately");
 		res.push_back("num_batches_per_clock");
 		res.push_back("num_epochs");
@@ -531,6 +550,7 @@ public:
 		res.push_back("top_decay_rate");
 		res.push_back("bottom_decay_rate");
 		res.push_back("target_error");
+		res.push_back("num_epochs_per_eval");
 		res.push_back("learning_rate");
 		res.push_back("decay_rate");
 		res.push_back("num_batches_per_epoch");
@@ -547,6 +567,7 @@ public:
 		res.push_back(consistency_model);
 		res.push_back(gstd::Printer::p(communication_factor));
 		res.push_back(gstd::Printer::p(virtual_staleness));
+		res.push_back(gstd::Printer::p(is_bipartite));
 		res.push_back(gstd::Printer::p(add_immediately));
 		res.push_back(gstd::Printer::p(num_batches_per_clock));
 		res.push_back(gstd::Printer::p(num_epochs));
@@ -556,6 +577,7 @@ public:
 		res.push_back(gstd::Printer::p(top_decay_rate));
 		res.push_back(gstd::Printer::p(bottom_decay_rate));
 		res.push_back(gstd::Printer::p(target_error));
+		res.push_back(gstd::Printer::p(num_epochs_per_eval));
 		res.push_back(gstd::Printer::p(learning_rate));
 		res.push_back(gstd::Printer::p(decay_rate));
 		res.push_back(gstd::Printer::p(num_batches_per_epoch));
@@ -745,6 +767,7 @@ void run()
 "ignore_nan=" + printBool(FLAGS_ignore_nan) + "\n"
 "communication_factor=" + printInt(FLAGS_communication_factor) + "\n"
 "virtual_staleness=" + printInt(FLAGS_virtual_staleness) + "\n"
+"is_bipartite=" + printBool(FLAGS_is_bipartite) + "\n"
 "#model\n"
 "lambda=" + printDouble(FLAGS_lambda) + "\n"
 "learning_rate=" + printDouble(FLAGS_learning_rate) + "\n"
@@ -902,6 +925,7 @@ void run()
 "    --ignore_nan=$ignore_nan \\\n"
 "    --communication_factor=$communication_factor \\\n"
 "    --virtual_staleness=$virtual_staleness \\\n"
+"    --is_bipartite=$is_bipartite \\\n"
 "    --lambda=$lambda \\\n"
 "    --learning_rate=$learning_rate \\\n"
 "    --decay_rate=$decay_rate \\\n"

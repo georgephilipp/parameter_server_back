@@ -184,6 +184,38 @@ void LRSGDSolver::pull(RowUpdateItem item)
       currentRow++;
     }
   }
+
+  if(FLAGS_is_bipartite)
+  {
+/////////////
+std::vector<int> biRowsUsed;
+    for (int i = 0; i < num_full_rows; ++i) {
+      if(i+FLAGS_client_id % 2 == 0)
+        continue;
+/////////////
+biRowsUsed.push_back(i);
+      petuum::RowAccessor row_acc;
+      const auto& r = w_table_.Get<petuum::DenseRow<float>>(i, &row_acc);
+      r.CopyToVector(&w_cache);
+      std::copy(w_cache.begin(), w_cache.end(),
+                w_cache_vec.begin() + i * w_table_num_cols_);
+    }
+    if (feature_dim_ % w_table_num_cols_ != 0 && num_full_rows+FLAGS_client_id % 2 == 0) {
+      // last incomplete row.
+////////////
+biRowsUsed.push_back(num_full_rows);
+      int num_cols_last_row = feature_dim_ - num_full_rows * w_table_num_cols_;
+      std::vector<float> w_cache(w_table_num_cols_);
+      petuum::RowAccessor row_acc;
+      const auto& r = w_table_.Get<petuum::DenseRow<float>>(num_full_rows, &row_acc);
+      r.CopyToVector(&w_cache);
+      std::copy(w_cache.begin(), w_cache.begin() + num_cols_last_row,
+          w_cache_vec.begin() + num_full_rows * w_table_num_cols_);
+    }
+////////////
+if(thread_id == 0)
+LOG(INFO) << "Client " << FLAGS_client_id << " is bipartitely pulling rows " << gstd::Printer::vp(biRowsUsed);
+  }
 }
 
 
