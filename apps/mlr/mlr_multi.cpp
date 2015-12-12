@@ -155,9 +155,9 @@ public:
         if( next == "initMiddle" )
             suggested = (pointTop + pointBottom) / 2;
         else if( next == "initBottom" )
-            suggested = 3*pointCenter - 2*pointTop;
+            suggested = 2*pointCenter - pointTop;
         else if( next == "initTop" )
-            suggested = 3*pointCenter - 2*pointBottom;
+            suggested = 2*pointCenter - pointBottom;
         else if( next == "top" )
             suggested = (pointTop + pointCenter) / 2;
         else if(next == "bottom")
@@ -596,7 +596,7 @@ std::map<std::string,std::string> readOutFiles(std::function<bool(std::vector<st
 		{
 			successCounter=0;
 		}
-		if(successCounter >= 5)
+		if(successCounter >= 3)
 		{
 			break;
 		}
@@ -987,9 +987,22 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
 	numBottomEpochsNeeded  = std::stoi(output["epochs"]);
 	if(numTopEpochsNeeded < ps.num_epochs || numBottomEpochsNeeded < ps.num_epochs)
 		break;
+
+	double centerMu = pow(10,(log10(topMu) + log10(bottomMu))/2);
+	if(FLAGS_virtual_staleness != -1)
+		centerMu = centerMu / ((double)(FLAGS_virtual_staleness+1));
+	ps.learning_rate = centerMu;
+	ps.set();
+	LOG(INFO) << "\n\n LR SEARCH TENTATIVE. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
+	run();
+	output = readOutFiles(boundErrorBasedStoppageCriterion);
+	int32_t numCenterEpochsNeeded  = std::stoi(output["epochs"]);
+	if(numCenterEpochsNeeded < ps.num_epochs)
+		break;
+
 	ps.num_epochs = 2*ps.num_epochs;
 	doubleCounter++;
-	if(doubleCounter == 4)
+	if(doubleCounter == 1)
 	{
 		muEpochMap.clear();
 		return IntervalSearchController();
@@ -1079,17 +1092,22 @@ IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std
 		muEpochMap.clear();
 		LOG(INFO) << "\n\n\n\n\n LR AND DECAY SEARCH. Running learning rate with search rate " << ps.decay_rate << " and starting epoch number " << ps.num_epochs << "\n\n\n\n\n";
 		muController = runLearningRateSearch(ps, muEpochMap);
+		double numEpochsNeeded = 0;
 		if((int)muEpochMap.size() == 0)
 		{
-			muDecayEpochMap.clear();
-			return IntervalSearchController();
+			numEpochsNeeded = epochsInitial + 1;
+			//write the log
+			searchLog = {{"LR search failed at rate " + gstd::Printer::p(nextRate) + ". Treated as infinite barrier."}};
 		}
-		double numEpochsNeeded = muController.getCenterVal();
-		muControllers[nextRate] = muController;
+		else
+		{
+			numEpochsNeeded = muController.getCenterVal();
+			//write the log
+			searchLog = muController.getLog();
+			searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(nextRate) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " is:"});
+		}
 		muDecayEpochMap[nextRate] = muEpochMap;
-		//write the log
-		searchLog = muController.getLog();
-		searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(nextRate) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " is:"});
+		muControllers[nextRate] = muController;
 		gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::app);
 		if(controller.consume(numEpochsNeeded))
 		{
