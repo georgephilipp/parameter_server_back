@@ -29,6 +29,7 @@ bool tableIsCreated = false;
 
 DECLARE_int32(num_train_data);
 DECLARE_string(train_file);
+DECLARE_string(train_file_suffix);
 DECLARE_bool(global_data);
 DECLARE_bool(force_global_file_names);
 DECLARE_string(test_file);
@@ -56,6 +57,7 @@ DECLARE_double(bottom_mu);
 DECLARE_double(top_decay_rate);
 DECLARE_double(bottom_decay_rate);
 DECLARE_double(target_error);
+DECLARE_int32(error_field);
 DECLARE_int32(num_epochs_per_eval);
 DECLARE_bool(sparse_weight);
 DECLARE_double(lambda);
@@ -70,6 +72,7 @@ DECLARE_string(system_path);
 DEFINE_string(train_file, "", "The program expects 2 files: train_file, "
     "train_file.meta. If global_data = false, then it looks for train_file.X, "
     "train_file.X.meta, where X is the client_id.");
+DEFINE_string(train_file_suffix, "", "Something to add to the train_file");
 DEFINE_bool(global_data, false, "If true, all workers read from the same "
     "train_file. If false, append X. See train_file.");
 DEFINE_bool(force_global_file_names, false, "If true, when then global_data is false, use global meta file");
@@ -111,6 +114,7 @@ DEFINE_int32(num_test_eval, 20, "Use the first num_test_eval test data for "
     "intermediate eval. 0 for using all. The final eval will always use all "
     "test data.");
 DEFINE_double(target_error, -1, "Stopping criterion for searches");
+DEFINE_int32(error_field, 6, "Error type used for convergence");
 //checkpoint/restart
 DEFINE_bool(use_weight_file, false, "True to use init_weight_file as init");
 DEFINE_string(weight_file, "", "Use this file to initialize weight. "
@@ -332,6 +336,7 @@ class ParmStruct
 {
 public:
 	int32_t num_train_data;
+    std::string train_file_suffix;
 	uint64_t client_bandwidth_mbps;
 	uint64_t server_bandwidth_mbps;
 	int32_t table_staleness;
@@ -348,6 +353,7 @@ public:
 	double top_decay_rate;
 	double bottom_decay_rate;
 	double target_error;
+    int error_field;
 	int32_t num_epochs_per_eval;
 	double learning_rate;
 	double decay_rate;
@@ -356,6 +362,7 @@ public:
     ParmStruct()
     {
         num_train_data = FLAGS_num_train_data;
+        train_file_suffix = FLAGS_train_file_suffix;
         client_bandwidth_mbps = FLAGS_client_bandwidth_mbps;
         server_bandwidth_mbps = FLAGS_server_bandwidth_mbps;
         table_staleness = FLAGS_table_staleness;
@@ -372,6 +379,7 @@ public:
 	top_decay_rate = FLAGS_top_decay_rate;
 	bottom_decay_rate = FLAGS_bottom_decay_rate;
 	target_error = FLAGS_target_error;
+    error_field = FLAGS_error_field;
 	num_epochs_per_eval = FLAGS_num_epochs_per_eval;
         learning_rate = FLAGS_learning_rate;
         decay_rate = FLAGS_decay_rate;
@@ -383,6 +391,7 @@ public:
     void set()
     {
         FLAGS_num_train_data = num_train_data;
+        FLAGS_train_file_suffix = train_file_suffix;
         FLAGS_client_bandwidth_mbps = client_bandwidth_mbps;
         FLAGS_server_bandwidth_mbps = server_bandwidth_mbps;
         FLAGS_table_staleness = table_staleness;
@@ -399,6 +408,7 @@ public:
 	FLAGS_top_decay_rate = top_decay_rate;
 	FLAGS_bottom_decay_rate = bottom_decay_rate;
 	FLAGS_target_error = target_error;
+    FLAGS_error_field = error_field;
 	FLAGS_num_epochs_per_eval = num_epochs_per_eval;
         FLAGS_learning_rate = learning_rate;
         FLAGS_decay_rate = decay_rate;
@@ -407,6 +417,7 @@ public:
         std::stringstream outSuffix;
         
         outSuffix << ".NTD" << num_train_data;
+        outSuffix << ".SUF" << train_file_suffix;
         outSuffix << ".CB" << client_bandwidth_mbps;
         outSuffix << ".SB" << server_bandwidth_mbps;
         outSuffix << ".TS" << table_staleness;
@@ -423,6 +434,7 @@ public:
 	outSuffix << ".TR" << top_decay_rate;
 	outSuffix << ".BR" << bottom_decay_rate;
 	outSuffix << ".TE" << target_error;
+    outSuffix << ".EF" << error_field;
 	outSuffix << ".EE" << num_epochs_per_eval;
         outSuffix << ".MU" << learning_rate;
         outSuffix << ".MUD" << decay_rate;
@@ -438,6 +450,10 @@ public:
 	{
 		num_train_data = std::stoi(argval);
 	}
+    else if(argname == "train_file_suffix")
+    {
+        train_file_suffix = argval;
+    }
 	else if(argname == "client_bandwidth_mbps")
 	{
 		client_bandwidth_mbps = (uint64_t)std::stoi(argval);
@@ -502,6 +518,10 @@ public:
 	{
 		target_error = std::stod(argval);
 	}
+    else if(argname == "error_field")
+    {
+        error_field = std::stoi(argval);
+    }
 	else if(argname == "num_epochs_per_eval")
 	{
 		num_epochs_per_eval = std::stoi(argval);
@@ -534,6 +554,7 @@ public:
 	{
 		std::vector<std::string> res;
 		res.push_back("num_train_data");
+        res.push_back("train_file_suffix");
 		res.push_back("client_bandwidth_mbps");
 		res.push_back("server_bandwidth_mbps");
 		res.push_back("table_staleness");
@@ -550,6 +571,7 @@ public:
 		res.push_back("top_decay_rate");
 		res.push_back("bottom_decay_rate");
 		res.push_back("target_error");
+        res.push_back("error_field");
 		res.push_back("num_epochs_per_eval");
 		res.push_back("learning_rate");
 		res.push_back("decay_rate");
@@ -561,6 +583,7 @@ public:
 	{
 		std::vector<std::string> res;
 		res.push_back(gstd::Printer::p(num_train_data));
+        res.push_back(gstd::Printer::p(train_file_suffix));
 		res.push_back(gstd::Printer::p(client_bandwidth_mbps));
 		res.push_back(gstd::Printer::p(server_bandwidth_mbps));
 		res.push_back(gstd::Printer::p(table_staleness));
@@ -577,6 +600,7 @@ public:
 		res.push_back(gstd::Printer::p(top_decay_rate));
 		res.push_back(gstd::Printer::p(bottom_decay_rate));
 		res.push_back(gstd::Printer::p(target_error));
+        res.push_back(gstd::Printer::p(error_field));
 		res.push_back(gstd::Printer::p(num_epochs_per_eval));
 		res.push_back(gstd::Printer::p(learning_rate));
 		res.push_back(gstd::Printer::p(decay_rate));
@@ -758,7 +782,7 @@ void run()
 "\n"
 "#app-specific inputs\n"
 "#training\n"
-"train_file=" + FLAGS_train_file + "\n"
+"train_file=" + FLAGS_train_file + FLAGS_train_file_suffix + "\n"
 "global_data=" + printBool(FLAGS_global_data) + "\n"
 "force_global_file_names=" + printBool(FLAGS_force_global_file_names) + "\n"
 "num_train_data=" + printInt(FLAGS_num_train_data) + "\n"
@@ -959,9 +983,9 @@ void run()
 	gstd::check(mgr.run().success, "Terminal run failed");
 }
 
-bool errorBasedStoppageCriterion(std::vector<std::string> row, double thresh)
+bool errorBasedStoppageCriterion(std::vector<std::string> row, double thresh, int field)
 {
-    if(std::stod(row[6]) <= thresh)
+    if(std::stod(row[field]) <= thresh)
         return true;
     else
         return false;
@@ -976,9 +1000,10 @@ bool errorBasedStoppageCriterion(std::vector<std::string> row, double thresh)
 IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, int32_t>& muEpochMap)
 {
     double targetError = FLAGS_target_error;
-    std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError](std::vector<std::string> row)
+    int errorField = FLAGS_error_field;
+    std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError, errorField](std::vector<std::string> row)
     {
-        return errorBasedStoppageCriterion(row, targetError);
+        return errorBasedStoppageCriterion(row, targetError, errorField);
     };
 
     double topMu = 0;
@@ -1223,9 +1248,10 @@ while(1)
 		ps.num_epochs = muDecayEpochMap[ps.decay_rate][ps.learning_rate];
 		ps.set();
 		double targetError = FLAGS_target_error;
-		std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError](std::vector<std::string> row)
+        int errorField = FLAGS_error_field;
+		std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError, errorField](std::vector<std::string> row)
 		{
-			return errorBasedStoppageCriterion(row, targetError);
+			return errorBasedStoppageCriterion(row, targetError, errorField);
 		};
 		stoppageCriterionUsed = boundErrorBasedStoppageCriterion;
 		
@@ -1250,9 +1276,10 @@ while(1)
             ps.num_epochs = muEpochMap[ps.learning_rate];
             ps.set();
             double targetError = FLAGS_target_error;
-            std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError](std::vector<std::string> row)
+            int errorField = FLAGS_error_field;
+            std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError, errorField](std::vector<std::string> row)
             {
-                return errorBasedStoppageCriterion(row, targetError);
+                return errorBasedStoppageCriterion(row, targetError, errorField);
             };
             stoppageCriterionUsed = boundErrorBasedStoppageCriterion;
 
