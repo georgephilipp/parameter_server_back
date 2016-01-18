@@ -25,6 +25,7 @@ DECLARE_bool(ignore_nan);
 DECLARE_int32(communication_factor);
 DECLARE_int32(virtual_staleness);
 DECLARE_bool(is_bipartite);
+DECLARE_bool(is_local_sync);
 DECLARE_double(learning_rate);
 DECLARE_double(decay_rate);
 DECLARE_int32(num_epochs_per_eval);

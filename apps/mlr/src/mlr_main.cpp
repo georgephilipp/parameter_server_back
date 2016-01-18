@@ -36,6 +36,7 @@ DEFINE_bool(ignore_nan, false, "If true, we place nan values with 0");
 DEFINE_int32(communication_factor, 1, "Amount of virtual network delay.");
 DEFINE_int32(virtual_staleness, 1, "Amount of staleness within virtual network delay.");
 DEFINE_bool(is_bipartite, false, "Use a bipartite virtual network delay");
+DEFINE_bool(is_local_sync, false, "When is_bipartite is true, this activates local sync");
 // Model
 DEFINE_double(lambda, 0.1, "L2 regularization parameter, only used for binary LR.");
 DEFINE_double(learning_rate, 0.1, "Initial step size");
@@ -75,6 +76,9 @@ int main(int argc, char *argv[]) {
   google::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
   CHECK(!FLAGS_sparse_weight) << "Not yet supported!";
+  CHECK(!FLAGS_is_local_sync || FLAGS_is_bipartite) << "Cannot have is_local_sync = true and is_bipartite = false";
+  CHECK(FLAGS_virtual_staleness == -1 || FLAGS_num_batches_per_epoch == 1) << "cannot have virtual staleness and minibatches";
+  CHECK(FLAGS_virtual_staleness != -1 || FLAGS_is_bipartite == 0) << "cannot have bipartite without virtual staleness";
   mlr::MLREngine mlr_engine;
   //STATS_APP_LOAD_DATA_BEGIN();
   mlr_engine.ReadData();
@@ -134,7 +138,14 @@ int main(int argc, char *argv[]) {
   table_config.table_info.row_type = kDenseRowFloatTypeID;
   table_config.table_info.row_capacity = (num_labels == 2) ? FLAGS_w_table_num_cols : feature_dim;
   table_config.table_info.dense_row_oplog_capacity = (num_labels == 2) ? FLAGS_w_table_num_cols : feature_dim;
-  table_config.process_cache_capacity = (num_labels == 2) ? std::ceil(static_cast<float>(feature_dim) / FLAGS_w_table_num_cols) : num_labels;
+  if(FLAGS_is_local_sync)
+  {
+    table_config.process_cache_capacity = (num_labels == 2) ? 2 * std::ceil(static_cast<float>(feature_dim) / FLAGS_w_table_num_cols) : num_labels; 
+  }
+  else
+  {
+    table_config.process_cache_capacity = (num_labels == 2) ? std::ceil(static_cast<float>(feature_dim) / FLAGS_w_table_num_cols) : num_labels; 
+  }
   LOG(INFO) << "feature dim = " << feature_dim;
   LOG(INFO) << "process cache capacity = " << table_config.process_cache_capacity;
   LOG(INFO) << "num_batches_per_epoch = " << FLAGS_num_batches_per_epoch;

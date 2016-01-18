@@ -28,6 +28,7 @@ LRSGDSolver::LRSGDSolver(const LRSGDSolverConfig& config) :
   w_table_(config.w_table),
   w_cache_(config.feature_dim),
   w_delta_(config.feature_dim),
+  w_delta_other_(config.feature_dim),
   feature_dim_(config.feature_dim),
   w_table_num_cols_(config.w_table_num_cols), lambda_(config.lambda),
   predict_buff_(2) {    // 2 for binary (2 classes).
@@ -66,6 +67,17 @@ void LRSGDSolver::SingleDataSGD(const petuum::ml::AbstractFeature<float>& featur
     petuum::ml::FeatureScaleAndAdd(-learning_rate * (predict_buff_[1] - label), feature,
         &w_cache_);
   }
+
+  // If local sync, then we also feed the other cache
+  if(FLAGS_is_local_sync)
+  {
+    petuum::ml::FeatureScaleAndAdd(-learning_rate * (predict_buff_[1] - label), feature,
+      &w_delta_other_);
+    if (lambda_ > 0) {
+      petuum::ml::FeatureScaleAndAdd(-learning_rate * lambda_, w_cache_,
+      &w_delta_other_);
+    }
+  }
 }
 
 //predict based on thread cache
@@ -98,139 +110,206 @@ float LRSGDSolver::CrossEntropyLoss(const std::vector<float>& prediction, int32_
         return -petuum::ml::SafeLog(prediction[label]);
   }
 
+void LRSGDSolver::pushRow(int index, bool isOffset)
+{
+  int num_full_rows = feature_dim_ / w_table_num_cols_;
+  bool hasPartialRow = (feature_dim_ - w_table_num_cols_ * num_full_rows != 0);
+  int numRows = num_full_rows;
+  if(hasPartialRow)
+    numRows++;
+  CHECK(index < numRows) << "index of pulled row too large";
+  int numCols = w_table_num_cols_;
+  if(index == num_full_rows)
+    numCols = feature_dim_ - w_table_num_cols_ * num_full_rows; 
+  petuum::DenseUpdateBatch<float> w_update_batch(0, numCols);
+  for (int j = 0; j < numCols; ++j) 
+  {
+    int idx = index * w_table_num_cols_ + j;
+    if(!(w_delta_[idx] == w_delta_[idx]))
+    {
+      if(FLAGS_ignore_nan)
+      {
+        w_delta_[idx] = 0;
+      }
+      else
+      {
+        CHECK_EQ(w_delta_[idx], w_delta_[idx]) << "nan detected.";
+      }
+    }
+    w_update_batch[j] = w_delta_[idx];
+    w_delta_[idx] = 0;
+  }
+  w_table_.DenseBatchInc(index + (isOffset ? numRows : 0), w_update_batch);
+}
+
+void LRSGDSolver::pushOther(int index, bool isOffset)
+{
+  int num_full_rows = feature_dim_ / w_table_num_cols_;
+  bool hasPartialRow = (feature_dim_ - w_table_num_cols_ * num_full_rows != 0);
+  int numRows = num_full_rows;
+  if(hasPartialRow)
+    numRows++;
+  CHECK(index < numRows) << "index of pulled row too large";
+  int numCols = w_table_num_cols_;
+  if(index == num_full_rows)
+    numCols = feature_dim_ - w_table_num_cols_ * num_full_rows; 
+  petuum::DenseUpdateBatch<float> w_update_batch(0, numCols);
+  for (int j = 0; j < numCols; ++j) 
+  {
+    int idx = index * w_table_num_cols_ + j;
+    if(!(w_delta_other_[idx] == w_delta_other_[idx]))
+    {
+      if(FLAGS_ignore_nan)
+      {
+        w_delta_other_[idx] = 0;
+      }
+      else
+      {
+        CHECK_EQ(w_delta_other_[idx], w_delta_other_[idx]) << "nan detected.";
+      }
+    }
+    w_update_batch[j] = w_delta_other_[idx];
+    w_delta_other_[idx] = 0;
+  }
+  w_table_.DenseBatchInc(index + (isOffset ? numRows : 0), w_update_batch);
+} 
+
+//inc and get: from and to thread cache
+void LRSGDSolver::push(RowUpdateItem item) {
+  // Write delta's to PS table.
+  int num_full_rows = feature_dim_ / w_table_num_cols_;
+  bool hasPartialRow = (feature_dim_ % w_table_num_cols_ != 0);
+  int totalRows = num_full_rows;
+  if(hasPartialRow)
+    totalRows++;
+  int currentRow = item.first;
+
+  if(!FLAGS_is_local_sync)
+  {
+    for (int i = 0; i < item.numRows; ++i) 
+    {
+      if(currentRow == totalRows)
+        currentRow = 0;
+      pushRow(currentRow, false);
+      currentRow++;
+    }
+
+    if(FLAGS_is_bipartite)
+    {
+      for(int i=0; i<num_full_rows;i++)
+      {
+        if((i+FLAGS_client_id) % 2 == 1)
+          continue;
+        pushRow(i, false);
+      }
+    }
+  }
+  else
+  {
+    for (int i = 0; i < totalRows; i++) 
+    {
+        pushRow(i, ((FLAGS_client_id % 2 == 1) ? true : false ));
+    }
+    
+    for (int i = 0; i < item.numRows; ++i) 
+    {
+      if(currentRow == totalRows)
+        currentRow = 0;
+      pushOther(currentRow, ((FLAGS_client_id % 2 == 0) ? true : false ));
+      currentRow++;
+    }
+  }
+}
+
 //inc and get: from and to thread cache
 void LRSGDSolver::push() {
   // Write delta's to PS table.
+  // Read w from the PS.
   int num_full_rows = feature_dim_ / w_table_num_cols_;
-  for (int i = 0; i < num_full_rows; ++i) {
-    petuum::DenseUpdateBatch<float> w_update_batch(0, w_table_num_cols_);
-    for (int j = 0; j < w_table_num_cols_; ++j) {
-      int idx = i * w_table_num_cols_ + j;
-      if(!(w_delta_[idx] == w_delta_[idx]))
-      {
-        if(FLAGS_ignore_nan)
-        {
-          w_delta_[idx] = 0;
-        }
-        else
-        {
-          CHECK_EQ(w_delta_[idx], w_delta_[idx]) << "nan detected.";
-        }
-      }
-      w_update_batch[j] = w_delta_[idx];
-    }  
-    w_table_.DenseBatchInc(i, w_update_batch);
+  bool hasPartialRow = (feature_dim_ - w_table_num_cols_ * num_full_rows != 0);
+  int totalRows = num_full_rows;
+  if(hasPartialRow)
+    totalRows++;
+  for (int i = 0; i < totalRows; i++) 
+  {
+    pushRow(i, false);
   }
-
-  if (feature_dim_ % w_table_num_cols_ != 0) {
-    // last incomplete row.
-    int num_cols_last_row = feature_dim_ - num_full_rows * w_table_num_cols_;
-    petuum::DenseUpdateBatch<float> w_update_batch(0, num_cols_last_row);
-    for (int j = 0; j < num_cols_last_row; ++j) {
-      int idx = num_full_rows * w_table_num_cols_ + j;
-      if(!(w_delta_[idx] == w_delta_[idx]))
-      {
-        if(FLAGS_ignore_nan)
-        {
-          w_delta_[idx] = 0;
-        }
-        else
-        {
-          CHECK_EQ(w_delta_[idx], w_delta_[idx]) << "nan detected.";
-        }
-      }
-      w_update_batch[j] = w_delta_[idx];
-    }
-    w_table_.DenseBatchInc(num_full_rows, w_update_batch);
-  }
-
-  // Zero delta.
-  std::vector<float>& w_delta_vec = w_delta_.GetVector();
-  std::fill(w_delta_vec.begin(), w_delta_vec.end(), 0);
-
-  //petuum::PSTableGroup::Clock();
 }
+
+
+void LRSGDSolver::pullRow(int index, bool isOffset)
+{
+  int num_full_rows = feature_dim_ / w_table_num_cols_;
+  bool hasPartialRow = (feature_dim_ - w_table_num_cols_ * num_full_rows != 0);
+  int numRows = num_full_rows;
+  if(hasPartialRow)
+    numRows++;
+  CHECK(index < numRows) << "index of pulled row too large";
+  int numCols = w_table_num_cols_;
+  if(index == num_full_rows)
+    numCols = feature_dim_ - w_table_num_cols_ * num_full_rows;    
+  std::vector<float>& w_cache_vec = w_cache_.GetVector();
+  std::vector<float> w_cache(w_table_num_cols_);
+  petuum::RowAccessor row_acc;
+  const auto& r = w_table_.Get<petuum::DenseRow<float>>(index + (isOffset ? numRows : 0), &row_acc);
+  r.CopyToVector(&w_cache);
+  std::copy(w_cache.begin(), w_cache.begin() + numCols, w_cache_vec.begin() + index * w_table_num_cols_);
+}  
 
 
 void LRSGDSolver::pull(RowUpdateItem item)
 {
   int num_full_rows = feature_dim_ / w_table_num_cols_;
-  std::vector<float>& w_cache_vec = w_cache_.GetVector();
-  std::vector<float> w_cache(w_table_num_cols_);
+  bool hasPartialRow = (feature_dim_ - w_table_num_cols_ * num_full_rows != 0);
+  int totalRows = num_full_rows;
+  if(hasPartialRow)
+    totalRows++;
   int currentRow = item.first;
+
 //////////////
 //if(FLAGS_client_id == 0)
 //LOG(INFO) << "client " << FLAGS_client_id << " pulling from row " << item.first << " and number of rows is " << item.numRows;
-  for(int i=0;i<item.numRows;i++)
+  if(!FLAGS_is_local_sync)
   {
-    if(currentRow == num_full_rows)
+    for(int i=0;i<item.numRows;i++)
     {
-      int num_cols_last_row = feature_dim_ - num_full_rows * w_table_num_cols_;
-      std::vector<float> w_cache(w_table_num_cols_);
-      petuum::RowAccessor row_acc;
-      const auto& r = w_table_.Get<petuum::DenseRow<float>>(num_full_rows, &row_acc);
-      r.CopyToVector(&w_cache);
-      std::copy(w_cache.begin(), w_cache.begin() + num_cols_last_row,
-        w_cache_vec.begin() + num_full_rows * w_table_num_cols_);
-      currentRow = 0;
-    }
-    else
-    {
-      petuum::RowAccessor row_acc;
-      const auto& r = w_table_.Get<petuum::DenseRow<float>>(currentRow, &row_acc);
-      r.CopyToVector(&w_cache);
-      std::copy(w_cache.begin(), w_cache.end(),
-        w_cache_vec.begin() + currentRow * w_table_num_cols_);
+      if(currentRow == totalRows)
+        currentRow = 0;
+      pullRow(currentRow, false);
       currentRow++;
     }
-  }
-
-  if(FLAGS_is_bipartite)
-  {
-    for (int i = 0; i < num_full_rows; ++i) {
-      if((i+FLAGS_client_id) % 2 == 1)
-        continue;
-      petuum::RowAccessor row_acc;
-      const auto& r = w_table_.Get<petuum::DenseRow<float>>(i, &row_acc);
-      r.CopyToVector(&w_cache);
-      std::copy(w_cache.begin(), w_cache.end(),
-                w_cache_vec.begin() + i * w_table_num_cols_);
+     
+    if(FLAGS_is_bipartite)
+    {
+      for (int i = 0; i < totalRows; i++) 
+      {
+        if((i+FLAGS_client_id) % 2 == 1)
+          continue;
+        pullRow(i, false);
+      }
     }
-    if (feature_dim_ % w_table_num_cols_ != 0 && (num_full_rows+FLAGS_client_id) % 2 == 0) {
-      // last incomplete row.
-      int num_cols_last_row = feature_dim_ - num_full_rows * w_table_num_cols_;
-      std::vector<float> w_cache(w_table_num_cols_);
-      petuum::RowAccessor row_acc;
-      const auto& r = w_table_.Get<petuum::DenseRow<float>>(num_full_rows, &row_acc);
-      r.CopyToVector(&w_cache);
-      std::copy(w_cache.begin(), w_cache.begin() + num_cols_last_row,
-          w_cache_vec.begin() + num_full_rows * w_table_num_cols_);
+  }
+  else
+  {
+    for (int i = 0; i < totalRows; i++) 
+    {
+        pullRow(i, ((FLAGS_client_id % 2 == 1) ? true : false ));
     }
   }
 }
 
 
-void LRSGDSolver::pull() {
+void LRSGDSolver::pull()
+{
   // Read w from the PS.
   int num_full_rows = feature_dim_ / w_table_num_cols_;
-  std::vector<float>& w_cache_vec = w_cache_.GetVector();
-  std::vector<float> w_cache(w_table_num_cols_);
-  for (int i = 0; i < num_full_rows; ++i) {
-    petuum::RowAccessor row_acc;
-    const auto& r = w_table_.Get<petuum::DenseRow<float>>(i, &row_acc);
-    r.CopyToVector(&w_cache);
-    std::copy(w_cache.begin(), w_cache.end(),
-              w_cache_vec.begin() + i * w_table_num_cols_);
-  }
-  if (feature_dim_ % w_table_num_cols_ != 0) {
-    // last incomplete row.
-    int num_cols_last_row = feature_dim_ - num_full_rows * w_table_num_cols_;
-    std::vector<float> w_cache(w_table_num_cols_);
-    petuum::RowAccessor row_acc;
-    const auto& r = w_table_.Get<petuum::DenseRow<float>>(num_full_rows, &row_acc);
-    r.CopyToVector(&w_cache);
-    std::copy(w_cache.begin(), w_cache.begin() + num_cols_last_row,
-        w_cache_vec.begin() + num_full_rows * w_table_num_cols_);
+  bool hasPartialRow = (feature_dim_ - w_table_num_cols_ * num_full_rows != 0);
+  int totalRows = num_full_rows;
+  if(hasPartialRow)
+    totalRows++;
+  for (int i = 0; i < totalRows; i++) 
+  {
+    pullRow(i, false);
   }
 }
 

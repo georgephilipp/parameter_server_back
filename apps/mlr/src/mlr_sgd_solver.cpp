@@ -63,6 +63,11 @@ MLRSGDSolver::~MLRSGDSolver() {
 /////////////////////////////////
 // INCOMPLETE
 /////////////////////////////////
+void MLRSGDSolver::push(RowUpdateItem item)
+{
+  LOG(FATAL) << "not implemented";
+}
+
 void MLRSGDSolver::push()
 {
   RefreshParamFun_(*this);

@@ -36,6 +36,9 @@ public:
   virtual float CrossEntropyLoss(const std::vector<float>& prediction, int32_t label)
     const = 0;
 
+  // Write pending updates to PS for a specified set of rows
+  virtual void push(RowUpdateItem item) = 0; 
+
   // Write pending updates to PS
   virtual void push() = 0;
 

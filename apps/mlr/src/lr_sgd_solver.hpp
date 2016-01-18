@@ -47,6 +47,9 @@ public:
   float CrossEntropyLoss(const std::vector<float>& prediction, int32_t label)
     const;
 
+  // Write pending updates to PS for a specified set of rows
+  void push(RowUpdateItem item);
+
   // Write pending updates to PS
   void push();
 
@@ -70,6 +73,7 @@ private:
   // Thread-cache.
   petuum::ml::DenseFeature<float> w_cache_;
   petuum::ml::DenseFeature<float> w_delta_;
+  petuum::ml::DenseFeature<float> w_delta_other_;
 
   int32_t feature_dim_; // feature dimension
   // feature_dim % w_table_num_cols might not be 0
@@ -80,6 +84,12 @@ private:
   // Specialization Functions
   std::function<float(const petuum::ml::AbstractFeature<float>&,
       const petuum::ml::AbstractFeature<float>&)> FeatureDotProductFun_;
+
+  void pullRow(int index, bool isOffset);
+
+  void pushRow(int index, bool isOffset);
+
+  void pushOther(int index, bool isOffset);
 };
 
 }  // namespace mlr

@@ -47,6 +47,7 @@ DECLARE_bool(ignore_nan);
 DECLARE_int32(communication_factor);
 DECLARE_int32(virtual_staleness);
 DECLARE_bool(is_bipartite);
+DECLARE_bool(is_local_sync);
 DECLARE_string(parm_file);
 DECLARE_double(learning_rate);
 DECLARE_bool(learning_rate_search);
@@ -85,7 +86,8 @@ DEFINE_int32(num_batches_per_clock, 1000000000, "doesn't do anything yet");
 DEFINE_bool(ignore_nan, false, "if this is true, replace nan by 0");
 DEFINE_int32(communication_factor, -1, "if this is not -1, then we introduce a virtual communication barrier of length this*batchlength");
 DEFINE_int32(virtual_staleness, -1, "if this is not -1, then we introduce allow this staleness value within the virtual communication barrier");
-DEFINE_bool(is_bipartite, false, "is this is true, then virtual staleness only applies within one half of the cluster");
+DEFINE_bool(is_bipartite, false, "if this is true, then virtual staleness only applies within one half of the cluster");
+DEFINE_bool(is_local_sync, false, "if this is true, in addition to a bipartite network, we synchronize locally in each component");
 // Model
 DEFINE_string(parm_file, "", "Input parameter file");
 DEFINE_double(lambda, 0.1, "L2 regularization parameter, only used for binary LR.");
@@ -131,6 +133,94 @@ DEFINE_string(system_path, "", "path to the directory where to hold shenanigans"
 const int32_t kDenseRowFloatTypeID = 0;
 //const int32_t kSparseFeatureRowFloatTypeID = 1;
 
+/*
+enum comparisonResult { greater, equal, less }
+
+class OptimizableValue
+{
+public:
+	comparisonResult compare(OptimizableValue val) = 0;
+}
+
+class IntDoublePair
+{
+public:
+	int intVal;
+	double doubleVal;
+
+	IntDoubleVal()
+	{
+		intVal = 0;
+		doubleVal = 0;
+	}
+
+	comparisonResult compare(IntDoublePair other)
+	{
+		if(intVal > other.intVal)
+			return greater;
+		else if(intVal < other.intVal)
+			return less;
+		else
+		{
+			if(doubleVal > other.doubleVal)
+				return greater;
+			else if(doubleVal < other.doubleVal)
+				return less;
+			else
+				return equal;
+		}
+	}
+}
+
+struct SearchSuggestion
+{
+	char direction;
+	double constCoord;
+	double topCoord;
+	double centerCoord;
+	double bottomCoord;
+}
+
+template<typename valType>
+struct SearchResult
+{
+	double coord;
+	valType result;
+}
+
+template<typename valType>
+class IntervalSearchController2D
+{
+public:
+	IntervalSearchController(
+		double startTopX,
+		double startBottomX,
+		double startTopY,
+		double startBottomY,
+		double threshold_
+	)
+	{
+		
+
+	}
+
+private:
+	double topX;
+	double centerX;
+	double bottomX;
+	double topY;
+	double centerY;
+	double bottomY;
+	valType topVal;
+	valType centerVal;
+	valType bottomVal;
+	SearchSuggestion suggested;
+	std::string next;
+	double threshold;
+	std::vector<std::vector<std::string> > searchLog;
+}
+
+*/
 
 
 class IntervalSearchController
@@ -154,6 +244,34 @@ public:
         threshold = threshold_;
 	searchLog.push_back({"startTop", gstd::Printer::p(pointTop), gstd::Printer::p(topVal)});
 	searchLog.push_back({"startBottom", gstd::Printer::p(pointBottom), gstd::Printer::p(bottomVal)});
+    }
+
+    IntervalSearchController(
+        double startTop, 
+	double startCenter,
+        double startBottom, 
+        double startTopVal, 
+	double startCenterVal, 
+        double startBottomVal,
+        double threshold_
+    )
+    {
+        pointTop = startTop;
+        pointBottom = startBottom;
+	pointCenter = startCenter;
+        topVal = startTopVal;
+        bottomVal = startBottomVal;
+	centerVal = startCenterVal;
+	if(centerVal <= bottomVal && centerVal <= topVal)
+		next = "top";
+	else if(bottomVal <= topVal)
+		next = "initBottom";
+	else
+		next = "initTop";
+        threshold = threshold_;
+	searchLog.push_back({"startTop", gstd::Printer::p(pointTop), gstd::Printer::p(topVal)});
+	searchLog.push_back({"startCenter", gstd::Printer::p(pointBottom), gstd::Printer::p(bottomVal)});
+	searchLog.push_back({"startBottom", gstd::Printer::p(pointCenter), gstd::Printer::p(centerVal)});
     }
         
     double get()
@@ -344,6 +462,7 @@ public:
         int32_t communication_factor;
 	int32_t virtual_staleness;
 	bool is_bipartite;
+        bool is_local_sync;
 	bool add_immediately;
 	int32_t num_batches_per_clock;
 	int32_t num_epochs;
@@ -370,6 +489,7 @@ public:
 	communication_factor = FLAGS_communication_factor;
 	virtual_staleness = FLAGS_virtual_staleness;
 	is_bipartite = FLAGS_is_bipartite;
+        is_local_sync = FLAGS_is_local_sync;
 	add_immediately = FLAGS_add_immediately;
         num_batches_per_clock = FLAGS_num_batches_per_clock;
 	num_epochs = FLAGS_num_epochs;
@@ -399,6 +519,7 @@ public:
 	FLAGS_communication_factor = communication_factor;
 	FLAGS_virtual_staleness = virtual_staleness;
 	FLAGS_is_bipartite = is_bipartite;
+        FLAGS_is_local_sync = is_local_sync;
 	FLAGS_add_immediately = add_immediately;
         FLAGS_num_batches_per_clock = num_batches_per_clock;
 	FLAGS_num_epochs = num_epochs;
@@ -425,6 +546,7 @@ public:
 	outSuffix << ".CF" << communication_factor;
 	outSuffix << ".VS" << virtual_staleness;
 	outSuffix << ".BI" << is_bipartite;
+        outSuffix << ".LS" << is_local_sync;
         outSuffix << ".AI" << add_immediately;
         outSuffix << ".BPC" << num_batches_per_clock;
         outSuffix << ".NE" << num_epochs;
@@ -482,6 +604,10 @@ public:
 	{
 		is_bipartite = (argval == "1");
 	}
+        else if(argname == "is_local_sync")
+        {
+                is_local_sync = (argval == "1");
+        }
 	else if(argname == "add_immediately")
 	{
 		add_immediately = (argval == "1");
@@ -540,7 +666,7 @@ public:
 	}
 	else
 	{
-		gstd::error("unknown parm");
+		gstd::error("unknown parm " + argname);
 	}
 	
     }
@@ -562,6 +688,7 @@ public:
 		res.push_back("communication_factor");
 		res.push_back("virtual_staleness");
 		res.push_back("is_bipartite");
+                res.push_back("is_local_sync");
 		res.push_back("add_immediately");
 		res.push_back("num_batches_per_clock");
 		res.push_back("num_epochs");
@@ -591,6 +718,7 @@ public:
 		res.push_back(gstd::Printer::p(communication_factor));
 		res.push_back(gstd::Printer::p(virtual_staleness));
 		res.push_back(gstd::Printer::p(is_bipartite));
+                res.push_back(gstd::Printer::p(is_local_sync));
 		res.push_back(gstd::Printer::p(add_immediately));
 		res.push_back(gstd::Printer::p(num_batches_per_clock));
 		res.push_back(gstd::Printer::p(num_epochs));
@@ -792,6 +920,7 @@ void run()
 "communication_factor=" + printInt(FLAGS_communication_factor) + "\n"
 "virtual_staleness=" + printInt(FLAGS_virtual_staleness) + "\n"
 "is_bipartite=" + printBool(FLAGS_is_bipartite) + "\n"
+"is_local_sync=" + printBool(FLAGS_is_local_sync) + "\n"
 "#model\n"
 "lambda=" + printDouble(FLAGS_lambda) + "\n"
 "learning_rate=" + printDouble(FLAGS_learning_rate) + "\n"
@@ -950,6 +1079,7 @@ void run()
 "    --communication_factor=$communication_factor \\\n"
 "    --virtual_staleness=$virtual_staleness \\\n"
 "    --is_bipartite=$is_bipartite \\\n"
+"    --is_local_sync=$is_local_sync \\\n"
 "    --lambda=$lambda \\\n"
 "    --learning_rate=$learning_rate \\\n"
 "    --decay_rate=$decay_rate \\\n"
@@ -997,7 +1127,7 @@ bool errorBasedStoppageCriterion(std::vector<std::string> row, double thresh, in
 //std::map<int32_t, double> bottomRateMap = {{500, 0.999}, {5000, 0.999}, {50000, 0.999}, {500000, 0.999}};
 //std::map<int32_t, double> targetErrorMap = {{500, 0.37}, {5000, 0.34}, {50000, 0.33}, {500000, 0.32}};
 
-IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, int32_t>& muEpochMap)
+/*IntervalSearchController runLearningRateSearchDepr(ParmStruct ps, std::map<double, int32_t>& muEpochMap)
 {
     double targetError = FLAGS_target_error;
     int errorField = FLAGS_error_field;
@@ -1081,9 +1211,95 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
         }
         ps.num_epochs = std::stoi(output["epochs"]) + 1;
     }
+}*/
+
+IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, int32_t>& muEpochMap)
+{
+    double targetError = FLAGS_target_error;
+    int errorField = FLAGS_error_field;
+    int startEpochNumber = ps.num_epochs;
+    std::function<bool(std::vector<std::string>)> boundErrorBasedStoppageCriterion = [targetError, errorField](std::vector<std::string> row)
+    {
+        return errorBasedStoppageCriterion(row, targetError, errorField);
+    };
+
+	double topMu = FLAGS_top_mu;
+	if(FLAGS_virtual_staleness != -1)
+		topMu = topMu / ((double)(FLAGS_virtual_staleness+1));
+	double bottomMu = FLAGS_bottom_mu;
+	if(FLAGS_virtual_staleness != -1)
+		bottomMu = bottomMu / ((double)(FLAGS_virtual_staleness+1));
+	double centerMu = pow(10, log10(topMu) / 2 + log10(bottomMu) / 2);
+
+	muEpochMap[centerMu] = ps.num_epochs;
+	ps.learning_rate = centerMu;
+	ps.set();
+	LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
+	run();
+	std::map<std::string, std::string> output = readOutFiles(boundErrorBasedStoppageCriterion);
+	int numCenterEpochsNeeded = std::stoi(output["epochs"]);
+	double centerFinalError = std::stod(output["test-0-1"]);
+	if(numCenterEpochsNeeded < startEpochNumber)
+		ps.num_epochs = numCenterEpochsNeeded + 1;
+	double centerVal = (double)numCenterEpochsNeeded;
+	if(numCenterEpochsNeeded == startEpochNumber)
+		centerVal += centerFinalError;
+
+	muEpochMap[topMu] = ps.num_epochs;
+	ps.learning_rate = topMu;
+	ps.set();
+	LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
+	run();
+	output = readOutFiles(boundErrorBasedStoppageCriterion);
+	int numTopEpochsNeeded = std::stoi(output["epochs"]);
+	double topFinalError = std::stod(output["test-0-1"]);
+	if(numTopEpochsNeeded < startEpochNumber)
+		ps.num_epochs = numTopEpochsNeeded + 1;
+	double topVal = (double)numTopEpochsNeeded;
+	if(numTopEpochsNeeded == startEpochNumber)
+		topVal += topFinalError;
+
+	muEpochMap[bottomMu] = ps.num_epochs;
+	ps.learning_rate = bottomMu;
+	ps.set();
+	LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
+	run();
+	output = readOutFiles(boundErrorBasedStoppageCriterion);
+	int numBottomEpochsNeeded  = std::stoi(output["epochs"]);
+	double bottomFinalError = std::stod(output["test-0-1"]);
+	if(numBottomEpochsNeeded < startEpochNumber)
+		ps.num_epochs = numBottomEpochsNeeded + 1;
+	double bottomVal = (double)numBottomEpochsNeeded;
+	if(numBottomEpochsNeeded == startEpochNumber)
+		bottomVal += bottomFinalError;
+
+    IntervalSearchController controller(log10(topMu), log10(centerMu), log10(bottomMu), topVal, centerVal, bottomVal, log10(1.01));
+    
+    while(1)
+    {
+        double nextMu = pow(10,controller.get());
+        muEpochMap[nextMu] = ps.num_epochs;
+        ps.learning_rate = nextMu;
+        ps.set();
+        LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
+        run();
+        std::map<std::string, std::string> output = readOutFiles(boundErrorBasedStoppageCriterion);
+	int outEpochsAsInt = std::stoi(output["epochs"]);
+	double outError = std::stod(output["test-0-1"]);
+	double outVal = std::stod(output["epochs"]);
+	if(outEpochsAsInt == startEpochNumber)
+	     outVal += outError;
+        if(controller.consume(outVal))
+        {
+            return controller;
+        }
+        ps.num_epochs = outEpochsAsInt + 1;
+	if(ps.num_epochs > startEpochNumber)
+	    ps.num_epochs = startEpochNumber;
+    }
 }
     
-IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std::map<double, int32_t> >& muDecayEpochMap, std::map<double, IntervalSearchController>& muControllers)
+/*IntervalSearchController runLRandDecaySearchDepr(ParmStruct ps, std::map<double, std::map<double, int32_t> >& muDecayEpochMap, std::map<double, IntervalSearchController>& muControllers)
 {
 	int32_t epochsInitial = ps.num_epochs;
 
@@ -1161,6 +1377,99 @@ IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std
 		if(controller.consume(numEpochsNeeded))
 		{
 			return controller;
+		}
+	}
+}*/
+
+IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std::map<double, int32_t> >& muDecayEpochMap, std::map<double, IntervalSearchController>& muControllers)
+{
+	double bestVal = (double)ps.num_epochs;
+	std::map<double, int32_t> muEpochMap;
+
+	double topRate = FLAGS_top_decay_rate;
+	if(FLAGS_virtual_staleness != -1)
+		topRate = pow(topRate, 1/((double)(FLAGS_virtual_staleness+1)));
+	double bottomRate = FLAGS_bottom_decay_rate;
+	if(FLAGS_virtual_staleness != -1)
+		bottomRate = pow(bottomRate, 1/((double)(FLAGS_virtual_staleness+1)));
+	double centerRate = pow(10,pow(10,(log10(-log10(topRate)) / 2 + log10(-log10(bottomRate)) / 2)));
+
+	muEpochMap.clear();
+	ps.decay_rate = centerRate;
+	LOG(INFO) << "\n\n\n\n\n LR AND DECAY SEARCH. Running learning rate with search rate " << ps.decay_rate << " and starting epoch number " << ps.num_epochs << "\n\n\n\n\n";
+	IntervalSearchController muController = runLearningRateSearch(ps, muEpochMap);
+	double centerVal = muController.getCenterVal();
+	muControllers[topRate] = muController;
+	muDecayEpochMap[topRate] = muEpochMap;
+	//write the log
+	std::vector<std::vector<std::string> > searchLog = muController.getLog();
+	searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(topRate) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " is:"});
+	gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::app);
+	if(centerVal < bestVal)
+	{
+		bestVal = centerVal;
+		ps.num_epochs = (int)(bestVal * 1.5);
+	}
+
+	muEpochMap.clear();
+	ps.decay_rate = topRate;
+	LOG(INFO) << "\n\n\n\n\n LR AND DECAY SEARCH. Running learning rate with search rate " << ps.decay_rate << " and starting epoch number " << ps.num_epochs << "\n\n\n\n\n";
+	muController = runLearningRateSearch(ps, muEpochMap);
+	double topVal = muController.getCenterVal();
+	muControllers[topRate] = muController;
+	muDecayEpochMap[topRate] = muEpochMap;
+	//write the log
+	searchLog = muController.getLog();
+	searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(topRate) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " is:"});
+	gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::app);
+	if(topVal < bestVal)
+	{
+		bestVal = topVal;
+		ps.num_epochs = (int)(bestVal * 1.5);
+	}
+
+	muEpochMap.clear();
+	ps.decay_rate = bottomRate;
+	LOG(INFO) << "\n\n\n\n\n LR AND DECAY SEARCH. Running learning rate with search rate " << ps.decay_rate << " and starting epoch number " << ps.num_epochs << "\n\n\n\n\n";
+	muController = runLearningRateSearch(ps, muEpochMap);
+	double bottomVal = muController.getCenterVal();
+	muControllers[bottomRate] = muController;
+	muDecayEpochMap[bottomRate] = muEpochMap;
+	//write the log
+	searchLog = muController.getLog();
+	searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(bottomRate) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " is:"});
+	gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::app);
+	if(bottomVal < bestVal)
+	{
+		bestVal = bottomVal;
+		ps.num_epochs = (int)(bestVal * 1.5);
+	}
+
+	IntervalSearchController controller(log10(-log10(topRate)), log10(-log10(centerRate)), log10(-log10(bottomRate)), topVal, centerVal, bottomVal, log10(1.01));
+
+	while(1)
+	{
+		double nextRate = pow(10,-pow(10, controller.get()));
+		ps.decay_rate = nextRate;
+		muEpochMap.clear();
+		LOG(INFO) << "\n\n\n\n\n LR AND DECAY SEARCH. Running learning rate with search rate " << ps.decay_rate << " and starting epoch number " << ps.num_epochs << "\n\n\n\n\n";
+		muController = runLearningRateSearch(ps, muEpochMap);
+		double nextVal = 0;
+		nextVal = muController.getCenterVal();
+		//write the log
+		searchLog = muController.getLog();
+		searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(nextRate) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " is:"});
+		muDecayEpochMap[nextRate] = muEpochMap;
+		muControllers[nextRate] = muController;
+		gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::app);
+		if(controller.consume(nextVal))
+		{
+			return controller;
+		}
+		if(nextVal < bestVal)
+		{
+			bestVal = nextVal;
+			ps.num_epochs = (int)(bestVal * 1.5);
 		}
 	}
 }

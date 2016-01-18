@@ -197,7 +197,12 @@ void MLREngine::Start() {
       petuum::PSTableGroup::GetTableOrDie<float>(kWTableID);
     int num_w_table_rows = num_labels_;
     if(num_labels_ == 2)
-      num_w_table_rows = std::ceil(static_cast<float>(feature_dim_) / w_table_num_cols_);  
+    {
+      if(FLAGS_is_local_sync)
+        num_w_table_rows = 2 * std::ceil(static_cast<float>(feature_dim_) / w_table_num_cols_);
+      else
+        num_w_table_rows = std::ceil(static_cast<float>(feature_dim_) / w_table_num_cols_);  
+    }
     for (int i = 0; i < num_w_table_rows; ++i) {
       w_table_.GetAsyncForced(i);
     }
@@ -286,6 +291,10 @@ void MLREngine::Start() {
     //one training epoch:
     float curr_learning_rate = learning_rate * pow(decay_rate, epoch);
     workload_mgr.Restart();
+    RowUpdateItem item;
+    if(FLAGS_virtual_staleness != -1)
+       item = rowScheduler.next();
+      
     while (!workload_mgr.IsEnd()) {
       int32_t data_idx = workload_mgr.GetDataIdxAndAdvance();
       /*
@@ -319,7 +328,10 @@ void MLREngine::Start() {
               process_barrier_push_.reset(new boost::barrier(FLAGS_num_table_threads));
           }
         }
-        mlr_solver->push();
+        if(FLAGS_virtual_staleness != -1)
+          mlr_solver->push(item);
+        else
+          mlr_solver->push();
         if(!workload_mgr.IsEnd())
 	{
           mlr_solver->pull();
@@ -338,7 +350,7 @@ void MLREngine::Start() {
 //LOG(INFO) << client_id << " has finished clock for epoch " << epoch+1 << " total time is " << t.t(false);
     STATS_APP_ACCUM_COMP_END();
     if(FLAGS_virtual_staleness != -1)
-      mlr_solver->pull(rowScheduler.next());
+      mlr_solver->pull(item);
     else
       mlr_solver->pull();
 ///////////////
