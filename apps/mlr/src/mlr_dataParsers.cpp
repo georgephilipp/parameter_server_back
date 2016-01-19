@@ -17,6 +17,7 @@ namespace mlr
 		{
 			std::ifstream file;
 			file.open(path);
+			CHECK(!file.fail()) << "failed to open data file";
 			std::string fileContents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 			file.close();
 
