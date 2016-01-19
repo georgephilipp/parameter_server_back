@@ -90,7 +90,7 @@ MLREngine::~MLREngine() {
 void MLREngine::ReadData() {
   std::string train_file = FLAGS_train_file
     + ((FLAGS_global_data || FLAGS_force_global_file_names) ? "" : "." + std::to_string(FLAGS_client_id));
-  LOG(INFO) << "Reading train file: " << train_file;
+  LOG(INFO) << "Client " << FLAGS_client_id << " reading train file: " << train_file;
   if (read_format_ == "bin") {
     petuum::ml::ReadDataLabelBinary(train_file, feature_dim_, num_train_data_,
         &train_features_, &train_labels_);
@@ -124,7 +124,7 @@ void MLREngine::ReadData() {
 		mlrDataParsers::custom_imnet(train_file, file_size_, num_train_data_, 0,
         &train_features_, &train_labels_);
 	if(perform_test_) {
-		LOG(INFO) << "Reading test file: " << FLAGS_test_file;
+		LOG(INFO) << "Client " << FLAGS_client_id << " reading test file: " << FLAGS_test_file;
       mlrDataParsers::custom_imnet(FLAGS_test_file, file_size_,
           num_test_data_, num_train_data_, &test_features_, &test_labels_);
     }
