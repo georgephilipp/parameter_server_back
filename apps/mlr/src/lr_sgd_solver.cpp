@@ -196,7 +196,7 @@ void LRSGDSolver::push(RowUpdateItem item) {
 
     if(FLAGS_is_bipartite)
     {
-      for(int i=0; i<num_full_rows;i++)
+      for(int i=0; i<totalRows;i++)
       {
         if((i+FLAGS_client_id) % 2 == 1)
           continue;
