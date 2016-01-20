@@ -36,6 +36,9 @@ namespace mlr
 
 				switch(fileContents[counter])
 				{
+				case '0':
+					counter++;
+					break;
 				case '1':
 					val += 1;
 					counter++;
