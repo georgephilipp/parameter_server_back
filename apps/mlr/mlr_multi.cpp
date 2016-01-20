@@ -26,20 +26,12 @@ using namespace msii810161816;
 
 bool tableIsCreated = false;
 
-
-DECLARE_int32(num_train_data);
+DECLARE_string(parm_file);
 DECLARE_string(train_file);
 DECLARE_string(train_file_suffix);
 DECLARE_bool(global_data);
 DECLARE_bool(force_global_file_names);
-DECLARE_string(test_file);
-DECLARE_int32(num_test_data);
-DECLARE_string(out_cols);
-DECLARE_int32(num_train_eval);
-DECLARE_int32(num_test_eval);
-DECLARE_bool(perform_test);
-DECLARE_bool(use_weight_file);
-DECLARE_string(weight_file);
+DECLARE_int32(num_train_data);
 DECLARE_int32(num_epochs);
 DECLARE_int32(num_batches_per_epoch);
 DECLARE_int32(num_batches_per_clock);
@@ -48,27 +40,36 @@ DECLARE_int32(communication_factor);
 DECLARE_int32(virtual_staleness);
 DECLARE_bool(is_bipartite);
 DECLARE_bool(is_local_sync);
-DECLARE_string(parm_file);
+DECLARE_double(lambda);
 DECLARE_double(learning_rate);
 DECLARE_bool(learning_rate_search);
 DECLARE_double(decay_rate);
 DECLARE_bool(lr_and_decay_search);
+DECLARE_bool(sparse_weight);
+DECLARE_bool(add_immediately);
 DECLARE_double(top_mu);
 DECLARE_double(bottom_mu);
 DECLARE_double(top_decay_rate);
 DECLARE_double(bottom_decay_rate);
+DECLARE_string(test_file);
+DECLARE_bool(perform_test);
+DECLARE_int32(num_epochs_per_eval);
+DECLARE_int32(num_test_data);
+DECLARE_string(out_cols);
+DECLARE_int32(num_train_eval);
+DECLARE_int32(num_test_eval);
 DECLARE_double(target_error);
 DECLARE_int32(error_field);
-DECLARE_int32(num_epochs_per_eval);
-DECLARE_bool(sparse_weight);
-DECLARE_double(lambda);
-DECLARE_bool(add_immediately);
-DECLARE_string(output_file_prefix);
+DECLARE_bool(use_weight_file);
+DECLARE_string(weight_file);
 DECLARE_int32(num_secs_per_checkpoint);
 DECLARE_int32(w_table_num_cols);
+DECLARE_string(output_file_prefix);
 DECLARE_string(prog_path);
 DECLARE_string(system_path);
 
+//Master Input
+DEFINE_string(parm_file, "", "Input parameter file");
 // Training
 DEFINE_string(train_file, "", "The program expects 2 files: train_file, "
     "train_file.meta. If global_data = false, then it looks for train_file.X, "
@@ -89,7 +90,6 @@ DEFINE_int32(virtual_staleness, -1, "if this is not -1, then we introduce allow 
 DEFINE_bool(is_bipartite, false, "if this is true, then virtual staleness only applies within one half of the cluster");
 DEFINE_bool(is_local_sync, false, "if this is true, in addition to a bipartite network, we synchronize locally in each component");
 // Model
-DEFINE_string(parm_file, "", "Input parameter file");
 DEFINE_double(lambda, 0.1, "L2 regularization parameter, only used for binary LR.");
 DEFINE_double(learning_rate, 0.1, "Initial step size");
 DEFINE_bool(learning_rate_search, false, "if true, then learning rate is optimizes with binary interval search in log space");
@@ -256,22 +256,39 @@ public:
         double threshold_
     )
     {
-        pointTop = startTop;
-        pointBottom = startBottom;
-	pointCenter = startCenter;
-        topVal = startTopVal;
-        bottomVal = startBottomVal;
-	centerVal = startCenterVal;
-	if(centerVal <= bottomVal && centerVal <= topVal)
+	if(startCenterVal <= startBottomVal && startCenterVal <= startTopVal)
 		next = "top";
-	else if(bottomVal <= topVal)
+	else if(startBottomVal <= startTopVal)
 		next = "initBottom";
 	else
 		next = "initTop";
+	if(next == "top")
+	{
+       		pointTop = startTop;
+		pointCenter = startCenter;
+       		pointBottom = startBottom;
+       		topVal = startTopVal;
+		centerVal = startCenterVal;
+        	bottomVal = startBottomVal;
+	}
+	else if(next == "initBottom")
+	{
+		pointTop = startCenter;
+		pointCenter = startBottom;
+		topVal = startCenterVal;
+		centerVal = startBottomVal;
+	}
+	else
+	{
+		pointBottom = startCenter;
+		pointCenter = startTop;
+		bottomVal = startCenterVal;
+		centerVal = startTopVal;
+	}
         threshold = threshold_;
-	searchLog.push_back({"startTop", gstd::Printer::p(pointTop), gstd::Printer::p(topVal)});
-	searchLog.push_back({"startCenter", gstd::Printer::p(pointBottom), gstd::Printer::p(bottomVal)});
-	searchLog.push_back({"startBottom", gstd::Printer::p(pointCenter), gstd::Printer::p(centerVal)});
+	searchLog.push_back({"startTop", gstd::Printer::p(startTop), gstd::Printer::p(startTopVal)});
+	searchLog.push_back({"startCenter", gstd::Printer::p(startCenter), gstd::Printer::p(startCenterVal)});
+	searchLog.push_back({"startBottom", gstd::Printer::p(startBottom), gstd::Printer::p(startBottomVal)});
     }
         
     double get()
@@ -293,7 +310,7 @@ public:
     
     bool consume( double val )
     {
-        searchLog.push_back({next, std::to_string(suggested), std::to_string(val)});
+        searchLog.push_back({next, gstd::Printer::p(suggested), gstd::Printer::p(val)});
         if( next == "initMiddle" )
         {
             if( val <= bottomVal && val <= topVal )
@@ -741,15 +758,21 @@ private:
 
 };
 
+std::vector<std::string> getHeader()
+{
+	if(FLAGS_perform_test)
+		return {"Epoch", "Batch", "Train-0-1", "Train-Entropy", "Train-obj", "Num-Train-Used", "Test-0-1", "Num-Test-Used", "Time"};
+	else
+		return {"Epoch", "Batch", "Train-0-1", "Train-Entropy", "Train-obj", "Num-Train-Used", "Time"};
+}
+
 
 std::map<std::string,std::string> readOutFiles(std::function<bool(std::vector<std::string>)> stoppageCriterion)
 {
 	std::map<std::string, std::string> res;
 
 	std::vector<std::vector<std::string> > outFile = gstd::Reader::rs<std::string>(FLAGS_output_file_prefix + ".loss", ' ');
-	std::vector<std::string> targetTableHeader = {"Epoch", "Batch", "Train-0-1", "Train-Entropy", "Train-obj", "Num-Train-Used", "Test-0-1", "Num-Test-Used", "Time"};
-	if(!FLAGS_perform_test)
-		targetTableHeader = {"Epoch", "Batch", "Train-0-1", "Train-Entropy", "Train-obj", "Num-Train-Used", "Time"};
+	std::vector<std::string> targetTableHeader = getHeader();
 	int targetHeaderRow = 0;
 	for(targetHeaderRow = 0; targetHeaderRow<(int)outFile.size(); targetHeaderRow++)
 	{
@@ -777,19 +800,19 @@ std::map<std::string,std::string> readOutFiles(std::function<bool(std::vector<st
 	}
 	std::vector<std::string> stoppageRow = outFile[stoppageRowInd];
 	gstd::check(stoppageRow.size() == targetTableHeader.size(), "incorrect size of stoppage row. StoppageRowInd was" + gstd::Printer::p(stoppageRowInd) + " Stoppage row was " + gstd::Printer::vp<std::string>(stoppageRow) + " size of stoppage row was " + gstd::Printer::p(stoppageRow.size()) + " size of header was " + gstd::Printer::p(targetTableHeader.size()));
-	res["epochs"] = stoppageRow[0];
-	res["train01"] = stoppageRow[2];
-	res["trainEntropy"] = stoppageRow[3];
-	res["trainObj"] = stoppageRow[4];
+	res["Epoch"] = stoppageRow[0];
+	res["Train-0-1"] = stoppageRow[2];
+	res["Train-Entropy"] = stoppageRow[3];
+	res["Train-obj"] = stoppageRow[4];
 	if(FLAGS_perform_test)
 	{
-		res["test01"] = stoppageRow[6];
-		res["time"] = stoppageRow[8];
+		res["Test-0-1"] = stoppageRow[6];
+		res["Time"] = stoppageRow[8];
 	}
 	else
 	{
-		res["time"] = stoppageRow[6];
-		res["test01"] = "-1";
+		res["Time"] = stoppageRow[6];
+		res["Test-0-1"] = "-1";
 	}
 
 	double waitPercentage = 0;
@@ -817,9 +840,7 @@ std::vector<std::map<std::string,std::string> > readOutFilesComplete()
 	std::vector<std::map<std::string, std::string> > res;
 
 	std::vector<std::vector<std::string> > outFile = gstd::Reader::rs<std::string>(FLAGS_output_file_prefix + ".loss", ' ');
-	std::vector<std::string> targetTableHeader = {"Epoch", "Batch", "Train-0-1", "Train-Entropy", "Train-obj", "Num-Train-Used", "Test-0-1", "Num-Test-Used", "Time"};
-	if(!FLAGS_perform_test)
-		targetTableHeader = {"Epoch", "Batch", "Train-0-1", "Train-Entropy", "Train-obj", "Num-Train-Used", "Time"};
+	std::vector<std::string> targetTableHeader = getHeader();
 	int targetHeaderRow = 0;
 	for(targetHeaderRow = 0; targetHeaderRow<(int)outFile.size(); targetHeaderRow++)
 	{
@@ -851,19 +872,19 @@ std::vector<std::map<std::string,std::string> > readOutFilesComplete()
 		if((int)outFile[i].size() == 0)
 			continue;
 		std::map<std::string, std::string> resRow;
-		resRow["epochs"] = row[0];
-		resRow["train01"] = row[2];
-		resRow["trainEntropy"] = row[3];
-		resRow["trainObj"] = row[4];
+		resRow["Epoch"] = row[0];
+		resRow["Train-0-1"] = row[2];
+		resRow["Train-Entropy"] = row[3];
+		resRow["Train-obj"] = row[4];
 		if(FLAGS_perform_test)
 		{
-			resRow["test01"] = row[6];
-			resRow["time"] = row[8];
+			resRow["Test-0-1"] = row[6];
+			resRow["Time"] = row[8];
 		}
 		else
 		{
-			resRow["time"] = row[6];
-			resRow["test01"] = "-1";
+			resRow["Time"] = row[6];
+			resRow["Test-0-1"] = "-1";
 		}
 		resRow["waitPercentage"] = gstd::Printer::p(waitPercentage);
 		res.push_back(resRow);
@@ -1152,7 +1173,7 @@ bool errorBasedStoppageCriterion(std::vector<std::string> row, double thresh, in
 	LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
 	run();
 	std::map<std::string, std::string> output = readOutFiles(boundErrorBasedStoppageCriterion);
-	numTopEpochsNeeded = std::stoi(output["epochs"]);
+	numTopEpochsNeeded = std::stoi(output["Epoch"]);
 
 	bottomMu = FLAGS_bottom_mu;
 	if(FLAGS_virtual_staleness != -1)
@@ -1163,7 +1184,7 @@ bool errorBasedStoppageCriterion(std::vector<std::string> row, double thresh, in
 	LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
 	run();
 	output = readOutFiles(boundErrorBasedStoppageCriterion);
-	numBottomEpochsNeeded  = std::stoi(output["epochs"]);
+	numBottomEpochsNeeded  = std::stoi(output["Epoch"]);
 	if(numTopEpochsNeeded < ps.num_epochs || numBottomEpochsNeeded < ps.num_epochs)
 		break;
 
@@ -1175,7 +1196,7 @@ bool errorBasedStoppageCriterion(std::vector<std::string> row, double thresh, in
 	LOG(INFO) << "\n\n LR SEARCH TENTATIVE. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
 	run();
 	output = readOutFiles(boundErrorBasedStoppageCriterion);
-	int32_t numCenterEpochsNeeded  = std::stoi(output["epochs"]);
+	int32_t numCenterEpochsNeeded  = std::stoi(output["Epoch"]);
 	if(numCenterEpochsNeeded < ps.num_epochs)
 		break;
 
@@ -1205,11 +1226,11 @@ bool errorBasedStoppageCriterion(std::vector<std::string> row, double thresh, in
         LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
         run();
         std::map<std::string, std::string> output = readOutFiles(boundErrorBasedStoppageCriterion);
-        if(controller.consume(std::stod(output["epochs"])))
+        if(controller.consume(std::stod(output["Epoch"])))
         {
             return controller;
         }
-        ps.num_epochs = std::stoi(output["epochs"]) + 1;
+        ps.num_epochs = std::stoi(output["Epoch"]) + 1;
     }
 }*/
 
@@ -1237,13 +1258,13 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
 	LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
 	run();
 	std::map<std::string, std::string> output = readOutFiles(boundErrorBasedStoppageCriterion);
-	int numCenterEpochsNeeded = std::stoi(output["epochs"]);
-	double centerFinalError = std::stod(output["test-0-1"]);
+	int numCenterEpochsNeeded = std::stoi(output["Epoch"]);
+	double centerFinalError = std::stod(output[getHeader()[errorField]]);
 	if(numCenterEpochsNeeded < startEpochNumber)
 		ps.num_epochs = numCenterEpochsNeeded + 1;
 	double centerVal = (double)numCenterEpochsNeeded;
 	if(numCenterEpochsNeeded == startEpochNumber)
-		centerVal += centerFinalError;
+		centerVal = centerVal * (1+centerFinalError);
 
 	muEpochMap[topMu] = ps.num_epochs;
 	ps.learning_rate = topMu;
@@ -1251,13 +1272,13 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
 	LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
 	run();
 	output = readOutFiles(boundErrorBasedStoppageCriterion);
-	int numTopEpochsNeeded = std::stoi(output["epochs"]);
-	double topFinalError = std::stod(output["test-0-1"]);
+	int numTopEpochsNeeded = std::stoi(output["Epoch"]);
+	double topFinalError = std::stod(output[getHeader()[errorField]]);
 	if(numTopEpochsNeeded < startEpochNumber)
 		ps.num_epochs = numTopEpochsNeeded + 1;
 	double topVal = (double)numTopEpochsNeeded;
 	if(numTopEpochsNeeded == startEpochNumber)
-		topVal += topFinalError;
+		topVal = topVal * (1+topFinalError);
 
 	muEpochMap[bottomMu] = ps.num_epochs;
 	ps.learning_rate = bottomMu;
@@ -1265,13 +1286,13 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
 	LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
 	run();
 	output = readOutFiles(boundErrorBasedStoppageCriterion);
-	int numBottomEpochsNeeded  = std::stoi(output["epochs"]);
-	double bottomFinalError = std::stod(output["test-0-1"]);
+	int numBottomEpochsNeeded  = std::stoi(output["Epoch"]);
+	double bottomFinalError = std::stod(output[getHeader()[errorField]]);
 	if(numBottomEpochsNeeded < startEpochNumber)
 		ps.num_epochs = numBottomEpochsNeeded + 1;
 	double bottomVal = (double)numBottomEpochsNeeded;
 	if(numBottomEpochsNeeded == startEpochNumber)
-		bottomVal += bottomFinalError;
+		bottomVal = bottomVal * (1+bottomFinalError);
 
     IntervalSearchController controller(log10(topMu), log10(centerMu), log10(bottomMu), topVal, centerVal, bottomVal, log10(1.01));
     
@@ -1284,11 +1305,11 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
         LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
         run();
         std::map<std::string, std::string> output = readOutFiles(boundErrorBasedStoppageCriterion);
-	int outEpochsAsInt = std::stoi(output["epochs"]);
-	double outError = std::stod(output["test-0-1"]);
-	double outVal = std::stod(output["epochs"]);
+	int outEpochsAsInt = std::stoi(output["Epoch"]);
+	double outError = std::stod(output[getHeader()[errorField]]);
+	double outVal = std::stod(output["Epoch"]);
 	if(outEpochsAsInt == startEpochNumber)
-	     outVal += outError;
+	     outVal = outVal * (1+outError);
         if(controller.consume(outVal))
         {
             return controller;
@@ -1392,18 +1413,18 @@ IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std
 	double bottomRate = FLAGS_bottom_decay_rate;
 	if(FLAGS_virtual_staleness != -1)
 		bottomRate = pow(bottomRate, 1/((double)(FLAGS_virtual_staleness+1)));
-	double centerRate = pow(10,pow(10,(log10(-log10(topRate)) / 2 + log10(-log10(bottomRate)) / 2)));
+	double centerRate = pow(10,-pow(10,(log10(-log10(topRate)) / 2 + log10(-log10(bottomRate)) / 2)));
 
 	muEpochMap.clear();
 	ps.decay_rate = centerRate;
 	LOG(INFO) << "\n\n\n\n\n LR AND DECAY SEARCH. Running learning rate with search rate " << ps.decay_rate << " and starting epoch number " << ps.num_epochs << "\n\n\n\n\n";
 	IntervalSearchController muController = runLearningRateSearch(ps, muEpochMap);
 	double centerVal = muController.getCenterVal();
-	muControllers[topRate] = muController;
-	muDecayEpochMap[topRate] = muEpochMap;
+	muControllers[centerRate] = muController;
+	muDecayEpochMap[centerRate] = muEpochMap;
 	//write the log
 	std::vector<std::vector<std::string> > searchLog = muController.getLog();
-	searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(topRate) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " is:"});
+	searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(centerRate) + " ratepoint " + gstd::Printer::p(log10(-log10(centerRate))) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " with best point " + gstd::Printer::p(muController.getPointCenter()) + " with best val " + gstd::Printer::p(muController.getCenterVal()) + " is:"});
 	gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::app);
 	if(centerVal < bestVal)
 	{
@@ -1420,7 +1441,7 @@ IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std
 	muDecayEpochMap[topRate] = muEpochMap;
 	//write the log
 	searchLog = muController.getLog();
-	searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(topRate) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " is:"});
+	searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(topRate) + " ratepoint " + gstd::Printer::p(log10(-log10(topRate))) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " with best point " + gstd::Printer::p(muController.getPointCenter()) + " with best val " + gstd::Printer::p(muController.getCenterVal()) + " is:"});
 	gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::app);
 	if(topVal < bestVal)
 	{
@@ -1437,7 +1458,7 @@ IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std
 	muDecayEpochMap[bottomRate] = muEpochMap;
 	//write the log
 	searchLog = muController.getLog();
-	searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(bottomRate) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " is:"});
+	searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(bottomRate) + " ratepoint " + gstd::Printer::p(log10(-log10(bottomRate))) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " with best point " + gstd::Printer::p(muController.getPointCenter()) + " with best val " + gstd::Printer::p(muController.getCenterVal()) + " is:"});
 	gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::app);
 	if(bottomVal < bestVal)
 	{
@@ -1458,7 +1479,7 @@ IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std
 		nextVal = muController.getCenterVal();
 		//write the log
 		searchLog = muController.getLog();
-		searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(nextRate) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " is:"});
+		searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(nextRate) + " ratepoint " + gstd::Printer::p(log10(-log10(nextRate))) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " with best point " + gstd::Printer::p(muController.getPointCenter()) + " with best val " + gstd::Printer::p(muController.getCenterVal()) + " is:"});
 		muDecayEpochMap[nextRate] = muEpochMap;
 		muControllers[nextRate] = muController;
 		gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::app);

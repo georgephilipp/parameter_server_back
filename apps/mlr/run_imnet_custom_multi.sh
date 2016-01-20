@@ -3,17 +3,17 @@
 
 #bash file inputs
 ssh_options="-oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -oLogLevel=quiet"
-outpath_tag="custom_imnet_mu_ss_repl"
+outpath_tag="KDDLR"
 
 #master input
-parm_file=/usr0/home/gschoenh/imnetParmsMuSSrepl.txt
+parm_file=/usr0/home/gschoenh/Dropbox/Work/Projects/ChallengingNetworks/parmFiles/imnetParmsKDDLR.txt
 
 #app-specific inputs
 #training
-train_file=/usr0/home/gschoenh/imnet
+train_file=/usr0/home/gschoenh/BigData/imnet
 global_data=false
 force_global_file_names=true
-num_train_data=500  # interesting
+num_train_data=480  # interesting
 num_epochs=10  #interesting
 num_batches_per_epoch=1
 ignore_nan=true
@@ -22,17 +22,23 @@ lambda=0
 learning_rate=0.001
 learning_rate_search=false
 decay_rate=0.99
-lr_and_decay_search=false
+lr_and_decay_search=true
 sparse_weight=false
-add_immediately=false
+add_immediately=true
+top_mu=0.01
+bottom_mu=0.001
+top_decay_rate=0.99
+bottom_decay_rate=0.999
 #testing
-test_file=/usr0/home/gschoenh/imnet
+test_file=/usr0/home/gschoenh/BigData/imnet
 perform_test=true
 num_epochs_per_eval=1
-num_test_data=500
-out_cols="epochs:train01:trainEntropy:trainObj:test01:time:waitPercentage"
-num_train_eval=500
-num_test_eval=500
+num_test_data=9600
+out_cols="Epoch:Train-0-1:Train-Entropy:Train-obj:Test-0-1:Time:waitPercentage"
+num_train_eval=4800
+num_test_eval=9600
+target_error=-1
+error_field=6
 #checkpoint/restart
 use_weight_file=false
 weight_file=/tank/projects/biglearning/jinlianw/data/mlr_data/imagenet_llc.weight
@@ -43,7 +49,7 @@ w_table_num_cols=500
 # System parameters:
 host_filename="../../machinefiles/localserver"
 consistency_model="SSPPush"
-num_table_threads=1
+num_table_threads=4
 num_comm_channels_per_client=1
 table_staleness=0
 
@@ -171,12 +177,12 @@ GLOG_logtostderr=true \
     --no_oplog_replay=${no_oplog_replay} \
     --client_send_oplog_upper_bound ${client_send_oplog_upper_bound} \
     --server_push_row_upper_bound ${server_push_row_upper_bound} \
+    --parm_file=$parm_file \
     --train_file=$train_file \
     --global_data=$global_data \
     --force_global_file_names=$force_global_file_names \
     --num_train_data=$num_train_data \
     --num_epochs=$num_epochs \
-    --parm_file=$parm_file \
     --num_batches_per_epoch=$num_batches_per_epoch \
     --ignore_nan=$ignore_nan \
     --lambda=$lambda \
@@ -184,8 +190,12 @@ GLOG_logtostderr=true \
     --learning_rate_search=$learning_rate_search \
     --decay_rate=$decay_rate \
     --lr_and_decay_search=$lr_and_decay_search \
-    --sparse_weight=${sparse_weight}\
+    --sparse_weight=${sparse_weight} \
     --add_immediately=${add_immediately} \
+    --top_mu=$top_mu \
+    --bottom_mu=$bottom_mu \
+    --top_decay_rate=$top_decay_rate \
+    --bottom_decay_rate=$bottom_decay_rate \
     --test_file=$test_file \
     --perform_test=$perform_test \
     --num_epochs_per_eval=$num_epochs_per_eval \
@@ -193,6 +203,8 @@ GLOG_logtostderr=true \
     --out_cols=$out_cols \
     --num_train_eval=$num_train_eval \
     --num_test_eval=$num_test_eval \
+    --target_error=$target_error \
+    --error_field=$error_field \
     --use_weight_file=$use_weight_file \
     --weight_file=$weight_file \
     --num_secs_per_checkpoint=${num_secs_per_checkpoint} \
