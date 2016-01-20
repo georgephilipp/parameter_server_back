@@ -12,6 +12,21 @@ namespace mlr
 {
 	namespace mlrDataParsers
 	{
+		std::string getSurroundingChars(std::string input, int center, int scope)
+		{
+			int startPoint = center - scope;
+			if(startPoint < 0)
+				startPoint = 0;
+			int endPoint = center + scope;
+			if(endPoint > input.length())
+				endPoint = input.length();
+			std::stringstream res;
+			for(int i=startPoint; i<endPoint; i++)
+			{
+				res << input[i];
+			}
+			return res.str();
+		}
 
 		std::vector<std::vector<float> >readDelimitedFileFast(std::string path, char delim)
 		{
@@ -33,7 +48,6 @@ namespace mlr
 
 				float val = 0.0F;
 
-
 				switch(fileContents[counter])
 				{
 				case '0':
@@ -47,125 +61,163 @@ namespace mlr
 					val += 2;
 					counter++;
 					break;
-				}					
+				}
 
-				counter++;
+				bool done = false;
 
-				switch (fileContents[counter])
+				switch(fileContents[counter])
 				{
-				case '0':
+				case ' ':
+					done = true;
 					break;
-				case '1':
-					val += 0.1F;
+				case '.':
+					counter++;
 					break;
-				case '2':
-					val += 0.2F;
-					break;
-				case '3':
-					val += 0.3F;
-					break;
-				case '4':
-					val += 0.4F;
-					break;
-				case '5':
-					val += 0.5F;
-					break;
-				case '6':
-					val += 0.6F;
-					break;
-				case '7':
-					val += 0.7F;
-					break;
-				case '8':
-					val += 0.8F;
-					break;
-				case '9':
-					val += 0.9F;
+				case '\n':
+					done = true;
 					break;
 				default:
-					CHECK(false) << "Faulty input file at counter value " << counter << " and file value " << fileContents[counter];
+					CHECK(false) << "Faulty input file at counter value " << counter << " . file values are " << getSurroundingChars(fileContents, counter, 20) << " fail point 1 and ";
 					break;
 				}
 
-				counter++;
-
-				switch (fileContents[counter])
+				if(!done)
 				{
-				case '0':
-					break;
-				case '1':
-					val += 0.01F;
-					break;
-				case '2':
-					val += 0.02F;
-					break;
-				case '3':
-					val += 0.03F;
-					break;
-				case '4':
-					val += 0.04F;
-					break;
-				case '5':
-					val += 0.05F;
-					break;
-				case '6':
-					val += 0.06F;
-					break;
-				case '7':
-					val += 0.07F;
-					break;
-				case '8':
-					val += 0.08F;
-					break;
-				case '9':
-					val += 0.09F;
-					break;
-				default:
-					CHECK(false) << "Faulty input file at counter value " << counter << " and file value " << fileContents[counter];
-					break;
+					switch (fileContents[counter])
+					{
+					case '0':
+						break;
+					case '1':
+						val += 0.1F;
+						break;
+					case '2':
+						val += 0.2F;
+						break;
+					case '3':
+						val += 0.3F;
+						break;
+					case '4':
+						val += 0.4F;
+						break;
+					case '5':
+						val += 0.5F;
+						break;
+					case '6':
+						val += 0.6F;
+						break;
+					case '7':
+						val += 0.7F;
+						break;
+					case '8':
+						val += 0.8F;
+						break;
+					case '9':
+						val += 0.9F;
+						break;
+					default:
+						CHECK(false) << "Faulty input file at counter value " << counter << " . file values are " << getSurroundingChars(fileContents, counter, 20) << " fail point 2";
+						break;
+					}
 				}
 
-				counter++;
-
-				switch (fileContents[counter])
+				if(!done)
 				{
-				case '0':
-					break;
-				case '1':
-					val += 0.001F;
-					break;
-				case '2':
-					val += 0.002F;
-					break;
-				case '3':
-					val += 0.003F;
-					break;
-				case '4':
-					val += 0.004F;
-					break;
-				case '5':
-					val += 0.005F;
-					break;
-				case '6':
-					val += 0.006F;
-					break;
-				case '7':
-					val += 0.007F;
-					break;
-				case '8':
-					val += 0.008F;
-					break;
-				case '9':
-					val += 0.009F;
-					break;
-				default:
-					CHECK(false) << "Faulty input file at counter value " << counter << " and file value " << fileContents[counter];
-					break;
+					counter++;
+
+					switch (fileContents[counter])
+					{
+					case '0':
+						break;
+					case '1':
+						val += 0.01F;
+						break;
+					case '2':
+						val += 0.02F;
+						break;
+					case '3':
+						val += 0.03F;
+						break;
+					case '4':
+						val += 0.04F;
+						break;
+					case '5':
+						val += 0.05F;
+						break;
+					case '6':
+						val += 0.06F;
+						break;
+					case '7':
+						val += 0.07F;
+						break;
+					case '8':
+						val += 0.08F;
+						break;
+					case '9':
+						val += 0.09F;
+						break;
+					case ' ':
+						done = true;
+						break;
+					case '\n':
+						done = true;
+						break;
+					default:
+						CHECK(false) << "Faulty input file at counter value " << counter << " . file values are " << getSurroundingChars(fileContents, counter, 20) << " fail point 3";
+						break;
+					}
 				}
 
+				if(!done)
+				{
+					counter++;
+
+					switch (fileContents[counter])
+					{
+					case '0':
+						break;
+					case '1':
+						val += 0.001F;
+						break;
+					case '2':
+						val += 0.002F;
+						break;
+					case '3':
+						val += 0.003F;
+						break;
+					case '4':
+						val += 0.004F;
+						break;
+					case '5':
+						val += 0.005F;
+						break;
+					case '6':
+						val += 0.006F;
+						break;
+					case '7':
+						val += 0.007F;
+						break;
+					case '8':
+						val += 0.008F;
+						break;
+					case '9':
+						val += 0.009F;
+						break;
+					case ' ':
+						done = true;
+						break;
+					case '\n':
+						done = true;
+						break;
+					default:
+						CHECK(false) << "Faulty input file at counter value " << counter << " . file values are " << getSurroundingChars(fileContents, counter, 20) << " fail point 4";
+						break;
+					}
+				}
+
+				if(!done)
+					counter++;
+				
 				row.push_back(val);
-
-				counter++;
 
 				if (fileContents[counter] != delim)
 				{
