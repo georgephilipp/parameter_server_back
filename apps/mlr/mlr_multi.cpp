@@ -949,7 +949,7 @@ void run()
 "sparse_weight=" + printBool(FLAGS_sparse_weight) + "\n"
 "add_immediately=" + printBool(FLAGS_add_immediately) + "\n"
 "#testing\n"
-"test_file=" + FLAGS_test_file + "\n"
+"test_file=" + FLAGS_test_file + FLAGS_train_file_suffix + "\n"
 "perform_test=" + printBool(FLAGS_perform_test) + "\n"
 "num_epochs_per_eval=" + printInt(FLAGS_num_epochs_per_eval) + "\n"
 "num_test_data=" + printInt(FLAGS_num_test_data) + "\n"
