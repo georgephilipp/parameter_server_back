@@ -85,6 +85,8 @@ int main(int argc, char *argv[]) {
   //STATS_APP_LOAD_DATA_END();
   int32_t feature_dim = mlr_engine.GetFeatureDim();
   int32_t num_labels = mlr_engine.GetNumLabels();
+  //CHECK(feature_dim / FLAGS_w_table_num_cols + ((feature_dim % FLAGS_w_table_num_cols) > 0 ? 1 : 0) == 64) << "currently needs to have 64 parm rows";
+  CHECK(feature_dim / FLAGS_w_table_num_cols + ((feature_dim % FLAGS_w_table_num_cols) > 0 ? 1 : 0) >= 50) << "too few rows";
 
   //print parms
   if(false)

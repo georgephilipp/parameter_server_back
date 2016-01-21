@@ -110,6 +110,15 @@ float LRSGDSolver::CrossEntropyLoss(const std::vector<float>& prediction, int32_
         return -petuum::ml::SafeLog(prediction[label]);
   }
 
+int LRSGDSolver::mapRow(int index)
+{
+	std::vector<int> map = {0,33,16,49,8,41,24,57,4,37,20,53,12,45,28,61,2,35,18,51,10,43,26,59,6,39,22,55,14,47,30,63,1,32,17,48,9,40,25,56,5,36,21,52,13,44,29,60,3,34,19,50,11,42,27,58,7,38,23,54,15,46,31,62};
+
+	return map[index];
+}
+	
+
+
 void LRSGDSolver::pushRow(int index, bool isOffset)
 {
   int num_full_rows = feature_dim_ / w_table_num_cols_;
@@ -118,6 +127,7 @@ void LRSGDSolver::pushRow(int index, bool isOffset)
   if(hasPartialRow)
     numRows++;
   CHECK(index < numRows) << "index of pulled row too large";
+  //index = mapRow(index);
   int numCols = w_table_num_cols_;
   if(index == num_full_rows)
     numCols = feature_dim_ - w_table_num_cols_ * num_full_rows; 
@@ -150,6 +160,7 @@ void LRSGDSolver::pushOther(int index, bool isOffset)
   if(hasPartialRow)
     numRows++;
   CHECK(index < numRows) << "index of pulled row too large";
+  //index = mapRow(index);
   int numCols = w_table_num_cols_;
   if(index == num_full_rows)
     numCols = feature_dim_ - w_table_num_cols_ * num_full_rows; 
@@ -245,6 +256,7 @@ void LRSGDSolver::pullRow(int index, bool isOffset)
   if(hasPartialRow)
     numRows++;
   CHECK(index < numRows) << "index of pulled row too large";
+  //index = mapRow(index);
   int numCols = w_table_num_cols_;
   if(index == num_full_rows)
     numCols = feature_dim_ - w_table_num_cols_ * num_full_rows;    

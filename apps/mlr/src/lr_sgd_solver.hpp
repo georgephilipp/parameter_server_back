@@ -84,6 +84,7 @@ private:
   // Specialization Functions
   std::function<float(const petuum::ml::AbstractFeature<float>&,
       const petuum::ml::AbstractFeature<float>&)> FeatureDotProductFun_;
+  int mapRow(int index);
 
   void pullRow(int index, bool isOffset);
 

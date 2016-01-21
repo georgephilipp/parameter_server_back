@@ -472,6 +472,7 @@ class ParmStruct
 public:
 	int32_t num_train_data;
     std::string train_file_suffix;
+	int32_t w_table_num_cols;
 	uint64_t client_bandwidth_mbps;
 	uint64_t server_bandwidth_mbps;
 	int32_t table_staleness;
@@ -499,6 +500,7 @@ public:
     {
         num_train_data = FLAGS_num_train_data;
         train_file_suffix = FLAGS_train_file_suffix;
+	w_table_num_cols = FLAGS_w_table_num_cols;
         client_bandwidth_mbps = FLAGS_client_bandwidth_mbps;
         server_bandwidth_mbps = FLAGS_server_bandwidth_mbps;
         table_staleness = FLAGS_table_staleness;
@@ -529,6 +531,7 @@ public:
     {
         FLAGS_num_train_data = num_train_data;
         FLAGS_train_file_suffix = train_file_suffix;
+	FLAGS_w_table_num_cols = w_table_num_cols;
         FLAGS_client_bandwidth_mbps = client_bandwidth_mbps;
         FLAGS_server_bandwidth_mbps = server_bandwidth_mbps;
         FLAGS_table_staleness = table_staleness;
@@ -556,6 +559,7 @@ public:
         
         outSuffix << ".NTD" << num_train_data;
         outSuffix << ".SUF" << train_file_suffix;
+	outSuffix << ".WT" << w_table_num_cols;
         outSuffix << ".CB" << client_bandwidth_mbps;
         outSuffix << ".SB" << server_bandwidth_mbps;
         outSuffix << ".TS" << table_staleness;
@@ -593,6 +597,10 @@ public:
     {
         train_file_suffix = argval;
     }
+	else if(argname == "w_table_num_cols")
+	{
+		w_table_num_cols = std::stoi(argval);
+	}
 	else if(argname == "client_bandwidth_mbps")
 	{
 		client_bandwidth_mbps = (uint64_t)std::stoi(argval);
@@ -698,6 +706,7 @@ public:
 		std::vector<std::string> res;
 		res.push_back("num_train_data");
         res.push_back("train_file_suffix");
+		res.push_back("w_table_num_cols");
 		res.push_back("client_bandwidth_mbps");
 		res.push_back("server_bandwidth_mbps");
 		res.push_back("table_staleness");
@@ -728,6 +737,7 @@ public:
 		std::vector<std::string> res;
 		res.push_back(gstd::Printer::p(num_train_data));
         res.push_back(gstd::Printer::p(train_file_suffix));
+		res.push_back(gstd::Printer::p(w_table_num_cols));
 		res.push_back(gstd::Printer::p(client_bandwidth_mbps));
 		res.push_back(gstd::Printer::p(server_bandwidth_mbps));
 		res.push_back(gstd::Printer::p(table_staleness));

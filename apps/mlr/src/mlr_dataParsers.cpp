@@ -4,6 +4,7 @@
 #include "gstd/src/Timer.h"
 #include "gstd/src/File.h"
 #include "gstd/src/Writer.h"
+#include "gstd/src/Vector.h"
 #include <petuum_ps_common/include/system_gflags_declare.hpp>
 
 using namespace msii810161816;
@@ -261,6 +262,24 @@ namespace mlr
 			return res;
 		}		
 
+		std::vector<float> reorder(std::vector<float> input, std::vector<int> newOrder)
+		{
+			int inpSize = (int)input.size();
+			std::vector<float> res;			
+			for(int i=0; i<inpSize;i++)
+				res.push_back(input[newOrder[i]]);
+			return res;
+		}
+
+		std::vector<float> unorder(std::vector<float> input, std::vector<int> newOrder)
+		{
+			int inpSize = (int)input.size();
+			std::vector<float> res(inpSize, 0);
+			for(int i=0; i<inpSize;i++)
+				res[newOrder[i]] = input[i];
+			return res;
+		}			
+
 		void custom_imnet
 		(
 			std::string filePath, 
@@ -281,6 +300,7 @@ namespace mlr
 			int firstDataPointWithinFileId = firstDataPoint - firstDataPointFileId * fileSize;
 			int lastDataPointFileId = lastDataPoint / fileSize;
 			int lastDataPointWithinFileId = lastDataPoint - lastDataPointFileId * fileSize;
+			std::vector<int> order;
 			for(int i=firstDataPointFileId; i<=lastDataPointFileId; i++)
 			{
 				int firstPoint = 0;
@@ -301,6 +321,12 @@ namespace mlr
 				gstd::Timer::inst.reset();
 				std::vector<std::vector<float> > personDataRaw = readDelimitedFileFast(personPath, ' ');
 				std::vector<std::vector<float> > nonPersonDataRaw = readDelimitedFileFast(nonPersonPath, ' ');
+				if((int)order.size() == 0)
+				{
+					int numFeatures = (int)personDataRaw[0].size();
+					gstd::Rand::seed(1);
+					order = gstd::Rand::perm(numFeatures, numFeatures);
+				}
 				/////////////////////////
 				//gstd::Rand::randomize();
 				//personDataRaw = gstd::vector::shuffle(personDataRaw);
@@ -310,10 +336,11 @@ namespace mlr
 				//int_32t dataSize = (int_32t)personDataRaw.size();
 				for(int j=firstPoint; j <=lastPoint;j++)
 				{
+					//CHECK(unorder(reorder(personDataRaw[j], order), order) == personDataRaw[j]) << "ordering function is broken";
 					labels->push_back(1);
-					features->push_back(new petuum::ml::DenseFeature<float>(personDataRaw[j]));
+					features->push_back(new petuum::ml::DenseFeature<float>(reorder(personDataRaw[j], order)));
 					labels->push_back(0);
-					features->push_back(new petuum::ml::DenseFeature<float>(nonPersonDataRaw[j]));
+					features->push_back(new petuum::ml::DenseFeature<float>(reorder(nonPersonDataRaw[j], order)));
 					/*petuumFeatVec = new petuum::ml::AbstractFeature<float>(dataSize);
 					for(int_32t k = 0;k < dataSize; k++)
 						petuumFeatVec.SetFeatureVal(k, nonPersonDataRaw[j][k]);
