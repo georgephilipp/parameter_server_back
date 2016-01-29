@@ -5,7 +5,9 @@ script_path=`readlink -f $0`
 script_dir=`dirname $script_path`
 app_root=`dirname $script_dir`
 
-source ${script_dir}/nytimes.config.sh
+iskill=1
+
+source ${script_dir}/nytimes.config.custom.sh
 
 doc_file=$(readlink -f $doc_filename)
 host_file=$(readlink -f $host_filename)

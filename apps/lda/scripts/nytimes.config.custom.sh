@@ -3,7 +3,7 @@
 table_staleness=0
 consistency_model=SSPPush
 
-num_work_units=240
+num_work_units=101
 
 #dataset=nytimes
 #dataset=20news
@@ -48,10 +48,14 @@ app_output_dir=${app_output_dir}_${client_bandwidth_mbps}
 app_output_dir=${app_output_dir}_${update_sort_policy}_${server_push_row_upper_bound}
 app_output_dir=${app_output_dir}_${client_send_oplog_upper_bound}_${num_comm_channels_per_client}_${num_clocks_per_work_unit}_16_${thread_oplog_batch_size}
 
+if [ -z ${iskill+x} ]; then
+    echo "kill"
+else
+    rm -rf ${app_output_dir}
+    mkdir ${app_output_dir}
+    cp ${app_root}/scripts/nytimes.config.sh ${app_output_dir}
+fi
 
-rm -rf ${app_output_dir}
-mkdir ${app_output_dir}
-cp ${app_root}/scripts/nytimes.config.sh ${app_output_dir}
 
 #doc_filename="datasets/processed/20news"
 #doc_filename="/home/jinliang/data/lda_data/processed/20news.1"
