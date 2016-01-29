@@ -15,8 +15,10 @@ namespace lda {
 
 class Corpus {
 public:
-  
-  Corpus();
+
+  Corpus(int seed);
+
+  Corpus(time_t seed);
 
   void AddDoc(const uint8_t *doc_data);
 

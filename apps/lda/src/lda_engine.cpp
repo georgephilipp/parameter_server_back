@@ -19,8 +19,18 @@
 
 namespace lda {
 
-LDAEngine::LDAEngine() :
-  thread_counter_(0) {
+LDAEngine::LDAEngine(int seed) :
+  corpus_(seed),
+  thread_counter_(0)  {
+  Context& context = Context::get_instance();
+  num_threads_ = context.get_int32("num_table_threads");
+  compute_ll_interval_ = context.get_int32("compute_ll_interval");
+  process_barrier_.reset(new boost::barrier(num_threads_));
+}
+
+LDAEngine::LDAEngine(time_t seed) :
+  corpus_(seed),
+  thread_counter_(0)  {
   Context& context = Context::get_instance();
   num_threads_ = context.get_int32("num_table_threads");
   compute_ll_interval_ = context.get_int32("compute_ll_interval");

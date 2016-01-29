@@ -12,6 +12,7 @@
 #include <thread>
 #include <vector>
 #include "common.hpp"
+#include "corpus.hpp"
 
 // Petuum Parameters
 DEFINE_uint64(word_topic_table_process_cache_capacity, 100000,
@@ -92,10 +93,14 @@ CHECK(!FLAGS_is_local_sync) << "not yet implemented";
   STATS_SET_APP_DEFINED_VEC_NAME("work_unit_sec");
   STATS_SET_APP_DEFINED_ACCUM_VAL_NAME("nonzero_entries");
 
-  lda::LDAEngine lda_engine;
+  lda::LDAEngine* lda_engine;
+  if(FLAGS_virtual_staleness != -1)
+    lda_engine = new lda::LDAEngine(0);
+  else
+    lda_engine = new lda::LDAEngine(time(NULL));
   LOG(INFO) << "Loading data";
   STATS_APP_LOAD_DATA_BEGIN();
-  lda_engine.ReadData(FLAGS_doc_file);
+  lda_engine->ReadData(FLAGS_doc_file);
   STATS_APP_LOAD_DATA_END();
 
   LOG(INFO) << "Read data done!";
@@ -156,12 +161,14 @@ CHECK(!FLAGS_is_local_sync) << "not yet implemented";
 
   std::vector<std::thread> threads(FLAGS_num_table_threads);
   for (auto& thr : threads) {
-    thr = std::thread(&lda::LDAEngine::Start, std::ref(lda_engine));
+    thr = std::thread(&lda::LDAEngine::Start, std::ref(*lda_engine));
   }
   for (auto& thr : threads) {
     thr.join();
   }
-
+  
+  delete lda_engine; 
+ 
   LOG(INFO) << "LDA finished!";
   petuum::PSTableGroup::ShutDown();
   LOG(INFO) << "LDA shut down!";

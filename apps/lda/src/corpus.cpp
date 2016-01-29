@@ -3,9 +3,18 @@
 
 namespace lda {
 
-Corpus::Corpus():
+Corpus::Corpus(int seed):
   iters_per_work_unit_(1),
-  gen_(time(NULL)) {
+  gen_(seed) {
+  Context& context = Context::get_instance();
+  K_ = context.get_int32("num_topics");
+  one_K_dist_.reset(new boost::uniform_int<>(1, K_));
+  one_K_rng_.reset(new rng_t(gen_, *one_K_dist_));
+}
+
+Corpus::Corpus(time_t seed):
+  iters_per_work_unit_(1),
+  gen_(seed) {
   Context& context = Context::get_instance();
   K_ = context.get_int32("num_topics");
   one_K_dist_.reset(new boost::uniform_int<>(1, K_));

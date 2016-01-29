@@ -25,7 +25,9 @@ namespace lda {
 // spawning threads, to recording execution time and loglikelihood.
 class LDAEngine {
 public:
-  LDAEngine();
+  LDAEngine(int seed);
+
+  LDAEngine(time_t seed);
 
   void ReadData(const std::string& doc_file);
 
