@@ -15,6 +15,7 @@
 #include <mutex>
 #include <set>
 #include <leveldb/db.h>
+#include "common.hpp"
 
 namespace lda {
 
@@ -35,6 +36,11 @@ void LDAEngine::Start() {
     lda_stats_.reset(new LDAStats);
   }
   FastDocSampler sampler;
+  FastDocSamplerVirtual virtualSampler;
+  lda_stats_->virtualSampler = &virtualSampler;
+
+  UpdateScheduler rowScheduler(FLAGS_communication_factor, FLAGS_virtual_staleness, FLAGS_num_vocabs);
+  RowUpdateItem item;
 
   Context& context = Context::get_instance();
   int client_id = context.get_int32("client_id");
@@ -101,6 +107,13 @@ void LDAEngine::Start() {
       local_vocabs_.insert(i);
     }
   }
+
+  if(FLAGS_virtual_staleness != -1)
+  {
+    for(int i=0;i<max_vocab_id;i++)
+      local_vocabs_.insert(i);
+  }
+
   STATS_APP_INIT_END();
 
   // need barrier sync to make sure all workers have added their local vocabs to
@@ -135,6 +148,23 @@ void LDAEngine::Start() {
   int32_t num_iters_per_work_unit = context.get_int32("num_iters_per_work_unit");
 
   int num_docs = corpus_.GetNumDocs();    // # of docs in this machine.
+
+  std::vector<int32_t> workload; 
+  if(FLAGS_virtual_staleness != -1)
+  {
+    if(thread_id == 0)
+    {
+      corpus_.buildIterVector();
+      virtualSampler.buildGlobalCache();
+    }
+    double doubleNumDocs = (double)num_docs;
+    double doubleNumThreads = (double)num_threads_;
+    double doubleThreadId = (double)thread_id;
+    int rangeStart = (int)std::round(doubleNumDocs * doubleThreadId / doubleNumThreads);
+    int rangeEnd = (int)std::round(doubleNumDocs * (doubleThreadId + 1.0) / doubleNumThreads);
+    for(int j=rangeStart;j<rangeEnd;j++)
+      workload.push_back(j);
+  }
 
   // ceil to ensure (num_docs_this_work_unit / num_dos_per_clock) does not
   // exceed num_clocks_per_work_unit
@@ -172,58 +202,113 @@ void LDAEngine::Start() {
     int32_t local_num_docs = 0;
     int32_t local_last_doc_ntokens = 0;
 
-    auto doc_iter = corpus_.GetOneDoc(&num_iters_this_work_unit);
+    if(FLAGS_virtual_staleness == -1)
+    {
+      auto doc_iter = corpus_.GetOneDoc(&num_iters_this_work_unit);
 
-    while (!corpus_.EndOfWorkUnit(doc_iter)) {
-      sampler.SampleOneDoc(&(*doc_iter));
-      ++local_num_docs;
-      //LOG(INFO) << "Sampled # docs = " << local_num_docs;
-      local_last_doc_ntokens = doc_iter->NumTokens();
+      while (!corpus_.EndOfWorkUnit(doc_iter)) {
+        sampler.SampleOneDoc(&(*doc_iter));
+        ++local_num_docs;
+        //LOG(INFO) << "Sampled # docs = " << local_num_docs;
+        local_last_doc_ntokens = doc_iter->NumTokens();
 
-      local_num_tokens += local_last_doc_ntokens;
-      int32_t num_docs_this_work_unit = ++num_docs_this_work_unit_;
+        local_num_tokens += local_last_doc_ntokens;
+        int32_t num_docs_this_work_unit = ++num_docs_this_work_unit_;
 
-      num_tokens_this_work_unit_ += doc_iter->NumTokens();
+        num_tokens_this_work_unit_ += doc_iter->NumTokens();
 
-      // Manage clocking.
-      int num_clocks_behind = (num_docs_this_work_unit / num_docs_per_clock)
-        - num_clocks_this_work_unit;
-      if (num_clocks_behind > 0) {
-        for (int i = 0; i < num_clocks_behind; ++i) {
-          petuum::PSTableGroup::Clock();
-          STATS_APP_DEFINED_ACCUM_SEC_END();
-          petuum::HighResolutionTimer refresh_timer;
-          sampler.RefreshCachedSummaryRow();
-          double refresh_sec = refresh_timer.elapsed();
-          //LOG(INFO) << " thread id = " << thread_id
-          //        << " refresh sec = " << refresh_sec;
-          STATS_APP_DEFINED_ACCUM_SEC_BEGIN();
+        // Manage clocking.
+        int num_clocks_behind = (num_docs_this_work_unit / num_docs_per_clock)
+          - num_clocks_this_work_unit;
+        if (num_clocks_behind > 0) {
+          for (int i = 0; i < num_clocks_behind; ++i) {
+            petuum::PSTableGroup::Clock();
+            STATS_APP_DEFINED_ACCUM_SEC_END();
+            petuum::HighResolutionTimer refresh_timer;
+            sampler.RefreshCachedSummaryRow();
+            //double refresh_sec = refresh_timer.elapsed();
+            //LOG(INFO) << " thread id = " << thread_id
+            //        << " refresh sec = " << refresh_sec;
+            STATS_APP_DEFINED_ACCUM_SEC_BEGIN();
+          }
+          num_clocks_this_work_unit += num_clocks_behind;
         }
-        num_clocks_this_work_unit += num_clocks_behind;
-      }
 
-      if (num_iters_this_work_unit >= 0) {
-	double seconds_this_work_unit = work_unit_timer.elapsed();
+        if (num_iters_this_work_unit >= 0) {
+	  double seconds_this_work_unit = work_unit_timer.elapsed();
+	  LOG(INFO)
+	    << "work_unit: " << work_unit
+	    << "\titer: " << num_iters_this_work_unit
+	    << "\tclient " << client_id
+	    << "\tthread_id " << thread_id
+	    << "\ttook: " << seconds_this_work_unit << " sec"
+	    << "\tthroughput: "
+	    << num_tokens_this_work_unit_ / num_threads_ / seconds_this_work_unit  
+  	    << " token/(thread*sec)";
+        }
+        doc_iter = corpus_.GetOneDoc(&num_iters_this_work_unit);
+      }
+  
+      int num_clocks_behind = num_clocks_per_work_unit - num_clocks_this_work_unit;
+  
+      for (int i = 0; i < num_clocks_behind; ++i) {
+        petuum::PSTableGroup::Clock();
+      }
+  
+      num_clocks_this_work_unit += num_clocks_behind;
+    }
+    else
+    {
+      int workloadSize = (int)workload.size();
+      for(int iter=0;iter<num_iters_per_work_unit;iter++)
+      {
+        for(int i=0; i<workloadSize; i++)
+        {
+          int32_t docId = workload[i];
+          auto doc_iter = corpus_.GetDocById(docId);
+          virtualSampler.SampleOneDoc(&(*doc_iter));
+          ++local_num_docs;
+          //LOG(INFO) << "Sampled # docs = " << local_num_docs;
+          local_last_doc_ntokens = doc_iter->NumTokens();
+          local_num_tokens += local_last_doc_ntokens;
+          num_tokens_this_work_unit_ += local_last_doc_ntokens;
+        }
+        double seconds_this_work_unit = work_unit_timer.elapsed();
 	LOG(INFO)
 	  << "work_unit: " << work_unit
-	  << "\titer: " << num_iters_this_work_unit
+          << "\tstatus: pre-sync"
+	  << "\titer: " << iter
 	  << "\tclient " << client_id
 	  << "\tthread_id " << thread_id
+          << "\tlocal tokens " << local_num_tokens
 	  << "\ttook: " << seconds_this_work_unit << " sec"
-	  << "\tthroughput: "
+	  << "\tthroughput per thread: "
 	  << num_tokens_this_work_unit_ / num_threads_ / seconds_this_work_unit
-	  << " token/(thread*sec)";
+  	  << " token/(thread*sec)"
+          << "\tthroughput total: "
+	  << num_tokens_this_work_unit_ / seconds_this_work_unit
+  	  << " token/(thread*sec)";
       }
-      doc_iter = corpus_.GetOneDoc(&num_iters_this_work_unit);
-    }
-
-    int num_clocks_behind = num_clocks_per_work_unit - num_clocks_this_work_unit;
-
-    for (int i = 0; i < num_clocks_behind; ++i) {
+      item = rowScheduler.next();
+      petuum::PSTableGroup::GlobalBarrier();
+      STATS_APP_DEFINED_ACCUM_SEC_END();
+      petuum::HighResolutionTimer syncTimer;
+      virtualSampler.push(item);
       petuum::PSTableGroup::Clock();
+      virtualSampler.pull(item);
+      petuum::PSTableGroup::GlobalBarrier();
+      STATS_APP_DEFINED_ACCUM_SEC_BEGIN();
+      double syncTime = syncTimer.elapsed();
+      if(thread_id == 0)
+      {
+        LOG(INFO)
+	  << "work_unit: " << work_unit
+          << "\tstatus: post-sync"
+	  << "\tclient " << client_id
+	  << "\ttook: " << syncTime << " sec";
+      }
+      process_barrier_->wait();
     }
-
-    num_clocks_this_work_unit += num_clocks_behind;
 
     process_barrier_->wait();
     STATS_APP_DEFINED_ACCUM_SEC_END();

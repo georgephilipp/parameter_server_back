@@ -108,24 +108,40 @@ void LDAStats::ComputeWordLLH(int32_t ith_llh, int word_idx_start,
   double word_llh = 0.;
   static double zero_entry_llh = GetLogGammaBetaOffset(0);
   for (int w = word_idx_start; w < word_idx_end; ++w) {
-    petuum::RowAccessor word_topic_row_acc;
-    const auto& word_topic_row = word_topic_table_.Get<petuum::SortedVectorMapRow<int32_t> >(w, &word_topic_row_acc);
+    std::vector<int16_t> counts;
 
-    CHECK(&word_topic_row != 0) << "null pointer read!";
+    if(FLAGS_virtual_staleness == -1)
+    {
+      petuum::RowAccessor word_topic_row_acc;
+      const auto& word_topic_row = word_topic_table_.Get<petuum::SortedVectorMapRow<int32_t> >(w, &word_topic_row_acc);
+      CHECK(&word_topic_row != 0) << "null pointer read!";
+      word_topic_row.CopyToVector(&word_topic_row_buff);
+      if (word_topic_row_buff.size() > 0) {
+        for (auto & wt_it : word_topic_row_buff) {
+          counts.push_back(std::max(wt_it.second, 0));
+        }
+      }
+    }
+    else
+    {
+      std::map<int32_t,int16_t> row = virtualSampler->get_word_topic_row(w);
+      typedef std::map<int32_t,int16_t>::iterator IterType;
+      for(IterType iter = row.begin(); iter != row.end(); ++iter)
+      {
+        counts.push_back(iter->second);
+      }
+    }
 
-    word_topic_row.CopyToVector(&word_topic_row_buff);
-    if (word_topic_row_buff.size() > 0) {
-      for (auto & wt_it : word_topic_row_buff) {
-        int count = std::max(wt_it.second, 0);
-        CHECK_LE(0, count) << "row id = " << w;
-        //word_llh += LogGamma(count + beta_);
-        word_llh += GetLogGammaBetaOffset(count);
+    int countSize = counts.size();
+    if (countSize > 0) {
+      for (int i=0;i<countSize;i++) {
+        word_llh += GetLogGammaBetaOffset((int)counts[i]);
         CHECK_EQ(word_llh, word_llh)
           << "word_llh is nan after LogGamma(count + beta_). count = "
-          << count;
+          << counts[i];
       }
       // The other word-topic counts are 0.
-      int num_zeros = K_ - word_topic_row_buff.size();
+      int num_zeros = K_ - countSize;
       word_llh += num_zeros * zero_entry_llh;
     }
   }
@@ -136,8 +152,19 @@ void LDAStats::ComputeWordLLH(int32_t ith_llh, int word_idx_start,
 void LDAStats::ComputeWordLLHSummary(int32_t ith_llh, int iter) {
   double word_llh = log_topic_normalizer_;
   // log(\prod_j (1 / \gamma(n_j^* + W\beta))) term.
-  petuum::RowAccessor summary_row_acc;
-  const auto& summary_row = summary_table_.Get<petuum::DenseRow<int32_t> >(0, &summary_row_acc);
+  std::vector<int32_t> summary_row;
+  if(FLAGS_virtual_staleness == -1)
+  {
+    petuum::RowAccessor summary_row_acc;
+    const auto& summary_row_raw = summary_table_.Get<petuum::DenseRow<int32_t> >(0, &summary_row_acc);
+    for (int k = 0; k < K_; ++k) {
+      summary_row.push_back(summary_row_raw[k]);
+    }
+  }
+  else
+  {
+    summary_row = virtualSampler->get_summary_vals();
+  }
 
   for (int k = 0; k < K_; ++k) {
     word_llh -= LogGamma(summary_row[k] + beta_sum_);

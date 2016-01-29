@@ -11,10 +11,17 @@
 #include <glog/logging.h>
 #include <thread>
 #include <vector>
+#include "common.hpp"
 
 // Petuum Parameters
 DEFINE_uint64(word_topic_table_process_cache_capacity, 100000,
               "Word topic table process cache capacity");
+
+//georg: virtual syncing
+DEFINE_int32(communication_factor, -1, "The factor by which communication is artificially delayed");
+DEFINE_int32(virtual_staleness, -1, "Artificial staleness");
+DEFINE_bool(is_bipartite, false, "bipartite topology in virtual staleness");
+DEFINE_bool(is_local_sync, false, "local styncing in bipartite topology in virtual staleness");
 
 // LDA Parameters
 DEFINE_string(doc_file, "",
@@ -49,6 +56,20 @@ int main(int argc, char *argv[]) {
   google::InitGoogleLogging(argv[0]);
 
   LOG(INFO) << "LDA starts here! dense serialize = " << FLAGS_oplog_dense_serialized;
+
+  //some checks
+  CHECK(FLAGS_communication_factor == -1 || FLAGS_communication_factor >= 1) << "bad range for communication factor";
+  CHECK(FLAGS_virtual_staleness == -1 || FLAGS_virtual_staleness >= 1) << "bad range for virtual staleness";
+  CHECK(FLAGS_virtual_staleness <= FLAGS_communication_factor) << "must have staleness < comm factor";
+  CHECK(FLAGS_virtual_staleness * FLAGS_communication_factor > 0) << "must have virtual staleness and communication factor simultaneously";
+  CHECK(FLAGS_communication_factor != -1 || !FLAGS_is_bipartite) << "cannot have communication_factor == -1 and is_bipartite";
+  CHECK(!FLAGS_is_local_sync || FLAGS_is_bipartite) << "cannot have local_sync and not is_bipartite";
+  CHECK(FLAGS_communication_factor == -1 || FLAGS_num_vocabs == FLAGS_max_vocab_id + 1) << "cannot have empty vocab ids for virtual staleness";
+  CHECK(FLAGS_communication_factor == -1 || FLAGS_num_clocks_per_work_unit == 1) << "does not supported fractional iterations with virtual staleness";
+  CHECK(FLAGS_communication_factor == -1 || FLAGS_table_staleness == 0) << "cannot have virtual staleness and actual staleness";
+
+/////////////////
+CHECK(!FLAGS_is_local_sync) << "not yet implemented";
 
   // Read in data first to get # of vocabs in this partition.
   petuum::TableGroupConfig table_group_config;

@@ -18,6 +18,9 @@ void Corpus::AddDoc(const uint8_t *doc_data) {
   DocumentWordTopics &last_doc = docs_.back();
   last_doc.DeserializeDoc(doc_data);
   last_doc.RandomInitWordTopics(one_K_rng_.get());
+
+  std::unique_lock<std::mutex> ulock(docs_mtx_);
+  docs_iter_vector_.clear();
 }
 
 void Corpus::RestartWorkUnit(uint32_t iters_per_work_unit) {
@@ -78,5 +81,61 @@ bool Corpus::EndOfWorkUnit(const std::list<DocumentWordTopics>::iterator &iter) 
 size_t Corpus::GetNumDocs() {
   return docs_.size();
 }
+
+void Corpus::buildIterVector()
+{
+  std::unique_lock<std::mutex> ulock(docs_mtx_);
+  docs_iter_vector_.clear();
+  std::list<DocumentWordTopics>::iterator doc_iter_cache = docs_iter_;
+  docs_iter_ = docs_.begin();
+  
+  while(docs_iter_ != docs_.end())
+  {
+    docs_iter_vector_.push_back(docs_iter_);
+    ++docs_iter_;
+  }
+
+  docs_iter_ = doc_iter_cache;
+}
+
+std::list<DocumentWordTopics>::iterator Corpus::GetDocById(int32_t docId)
+{
+  CHECK((int)docs_iter_vector_.size() > docId) << "docId is out of range";
+  CHECK(docId >= 0) << "docId is negative";
+
+  return docs_iter_vector_[docId];
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 }

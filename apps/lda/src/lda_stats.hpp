@@ -6,6 +6,7 @@
 #include <petuum_ps_common/include/petuum_ps.hpp>
 
 #include "document_word_topics.hpp"
+#include "fast_doc_sampler_virtual.hpp"
 #include <string>
 
 namespace lda {
@@ -98,6 +99,10 @@ private:
   // the complete log-likelihood of the i-th likelihood computation.
   petuum::Table<double> llh_table_;
 
+
+  // ============== georgs additions ======================================
+public:
+  FastDocSamplerVirtual* virtualSampler;
 };
 
 }  // namespace lda

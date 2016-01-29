@@ -40,12 +40,19 @@ public:
 
   size_t GetNumDocs();
 
+  //georgs addition
+  void buildIterVector();
+  std::list<DocumentWordTopics>::iterator
+  GetDocById(int32_t docId);
+
 private:
 
   uint32_t iters_per_work_unit_;
 
   std::list<DocumentWordTopics> docs_;
   std::list<DocumentWordTopics>::iterator docs_iter_;
+  //georgs addition
+  std::vector<std::list<DocumentWordTopics>::iterator> docs_iter_vector_;
 
   int32_t num_iters_this_work_unit_;
   std::mutex docs_mtx_;

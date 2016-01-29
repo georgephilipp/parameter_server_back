@@ -4,9 +4,11 @@
 #pragma once
 
 #include <petuum_ps_common/include/petuum_ps.hpp>
+#include <petuum_ps_common/include/system_gflags_declare.hpp>
 
 #include "corpus.hpp"
 #include "fast_doc_sampler.hpp"
+#include "fast_doc_sampler_virtual.hpp"
 #include "lda_stats.hpp"
 #include "context.hpp"
 #include "document_word_topics.hpp"
@@ -15,6 +17,7 @@
 #include <vector>
 #include <string>
 #include <set>
+#include "updateScheduler.hpp"
 
 namespace lda {
 
