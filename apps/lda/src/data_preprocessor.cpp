@@ -92,7 +92,7 @@ int main(int argc, char* argv[]) {
 
     corpus.push_back(new_doc);
     ++doc_id;
-    LOG_EVERY_N(INFO, 100000) << "Reading doc " << doc_id;
+    //LOG_EVERY_N(INFO, 100000) << "Reading doc " << doc_id;
   }
   free(line);
   CHECK_EQ(0, fclose(data_stream)) << "Failed to close file "
@@ -122,6 +122,7 @@ int main(int argc, char* argv[]) {
     options.error_if_exists = true;
     options.block_size = 1024*1024;
     std::string db_path = MakePartitionDBPath(i);
+    LOG(INFO) << "the path to the partition " << i << " is " << db_path;
     leveldb::Status db_status = leveldb::DB::Open(options, db_path,
                                                   &(db_vector[i]));
     CHECK(db_status.ok())
