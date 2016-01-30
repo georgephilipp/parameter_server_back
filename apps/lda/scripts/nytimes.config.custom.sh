@@ -14,6 +14,11 @@ num_worker_threads=1
 
 num_topics=100
 
+communication_factor=1
+virtual_staleness=1
+is_bipartite=false
+is_local_sync=false
+
 num_clocks_per_work_unit=1
 num_iters_per_work_unit=1
 
