@@ -102,7 +102,11 @@ GLOG_logtostderr=true \
     --num_work_units $num_work_units \
     --compute_ll_interval=$compute_ll_interval \
     --doc_file=${doc_file}.$client_id \
-    --output_file_prefix ${output_file_prefix}"
+    --output_file_prefix ${output_file_prefix} \
+    --communication_factor=$communication_factor \
+    --virtual_staleness=$virtual_staleness \
+    --is_bipartite=$is_bipartite \
+    --is_local_sync=$is_local_sync"
 
 #  echo $cmd
   ssh $ssh_options $ip $cmd &

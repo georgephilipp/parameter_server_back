@@ -71,6 +71,8 @@ private:  // private members.
   std::vector<std::map<int32_t,int16_t> > word_topic_delta_;
   std::vector<real_t> s_vector_;
   real_t s_total_;
+public:
+  int thread_id;
 
 public:
   void pull(RowUpdateItem item);

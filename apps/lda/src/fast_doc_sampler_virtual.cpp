@@ -39,6 +39,10 @@ FastDocSamplerVirtual::~FastDocSamplerVirtual() {}
 
 void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc) 
 {
+  //checking variables
+  double qCounter = 0;
+  double sCounter = 0;
+  double rCounter = 0;
   // Build document-wise cache
   std::vector<int16_t> docTopicVector(K_, 0);
   std::set<int32_t> docTopicSet;
@@ -69,10 +73,10 @@ void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc)
     int32_t oldTopic = it.Topic();
     int32_t wordId = it.Word();
     CHECK_LT(oldTopic, K_);
-
     //Remove this variable assignment by updating the cache
     //global cache
     summary_vals_[oldTopic]--;
+    CHECK(word_topic_vals_[wordId].count(oldTopic) == 1) << "cannot remove topic that doesn't exist";
     word_topic_vals_[wordId][oldTopic]--;
     if(word_topic_vals_[wordId][oldTopic] == (int16_t)0)
       word_topic_vals_[wordId].erase(oldTopic);
@@ -101,11 +105,72 @@ void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc)
     {
       int32_t topic = iter->first;
       int16_t count = iter->second;
+      CHECK(count > 0) << "found non-positive word-topic val " << count;
       wordTopics.push_back(topic);
       q_vector[topic] = q_coeffs[topic] * ((real_t)count);
       q_total += q_vector[topic];
     }
     int numWordTopics = (int)wordTopics.size();
+
+    //slow checks: on demand
+    if(false)
+    {
+      real_t r_check = 0;
+      real_t s_check = 0;
+      real_t q_check = 0;
+      for(int i=0;i<(int)r_vector.size();i++)
+      {
+        r_check += r_vector[i];
+        CHECK(r_vector[i] >= 0) << "found negative r entry";
+      }
+      for(int i=0;i<(int)s_vector_.size();i++)
+      {
+        s_check += s_vector_[i];
+        CHECK(s_vector_[i] >= 0) << "found negative s entry";
+      }
+      for(int i=0;i<(int)q_vector.size();i++)
+      {
+        q_check += q_vector[i];
+        CHECK(q_coeffs[i] >= 0) << "found negative q entry";
+        CHECK(q_vector[i] >= 0) << "found negative q entry";
+      } 
+      real_t rRatio = (r_check - r_total);
+      if(rRatio < 0)
+        rRatio = -rRatio;
+      rRatio = rRatio / r_total;
+      real_t sRatio = (s_check - s_total_);
+      if(sRatio < 0)
+        sRatio = -sRatio;
+      sRatio = sRatio / s_total_;
+      real_t qRatio = (q_check - q_total);
+      if(qRatio < 0)
+        qRatio = -qRatio;
+      qRatio = qRatio / q_total;
+      if(rRatio >= 0.00001 || sRatio >= 0.00001 || qRatio >= 0.00001)
+      {
+        LOG(INFO) << "b12 " << numWordTopics << " " << wordTopics.size() << " " << numDocTopics << " " << docTopics.size() << " " << q_vector.size() << " " << q_total << " " << r_total << " " << s_total_ << " " << r_check << " " << s_check << " " << oldTopic;
+        CHECK(rRatio < 0.00001) << "r has become inconsistent";
+        CHECK(sRatio < 0.00001) << "s has become inconsistent";
+        CHECK(qRatio < 0.00001) << "q has become inconsistent";
+      }
+      CHECK(numDocTopics == (int)docTopics.size()) << "docTopics of incorrect size";
+      CHECK(numDocTopics == (int)docTopicSet.size()) << "docTopicSet of incorrect size";
+      CHECK(numWordTopics == (int)wordTopics.size()) << "wordTopics of incorrecrt size";
+      for(int i=0;i<K_;i++)
+      {
+        if(docTopicSet.count(i) == 0)
+        {
+          CHECK(docTopicVector[i] == 0) << "docTopicVector has hidden nonzero";
+          CHECK(r_vector[i] == 0) << "r_vector has hidden nonzero";
+        }
+        if(std::find(wordTopics.begin(), wordTopics.end(), i) == wordTopics.end())
+        {
+          CHECK(q_vector[i] == 0) << "q_vector has hidden nonzero";
+        }
+      }
+      for(int i=0;i<numDocTopics;i++)
+        CHECK(docTopicSet.count(docTopics[i]) == 1) << "docTopic Set and docTopics are inconsistent";
+    }
 
     //sample
     real_t total_mass = q_total + r_total + s_total_;
@@ -114,6 +179,7 @@ void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc)
 
     if (sample < q_total) 
     {
+      qCounter += ((double)total_mass) / ((double)q_total);
       // The dart falls in [q_sum_ interval], which consists of [large_q_term |  
       // ... | small_q_term]. ~90% should fall in the q bucket.
       for (int i = 0; i < numWordTopics; ++i) 
@@ -122,12 +188,13 @@ void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc)
         if (sample <= 0.) 
         {
           newTopic = wordTopics[i];
+          break;
         }
       }
       if(newTopic == -1)
       {
         // Overflow.
-        LOG(INFO) << "sample = " << sample << " has overflowed in q bucket.";
+        LOG(INFO) << "sample = " << sample << " has overflowed in q bucket. Counters are " << qCounter << " " << rCounter << " " << sCounter;
         newTopic = wordTopics[numWordTopics - 1];
       }
     } 
@@ -137,23 +204,26 @@ void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc)
       sample -= q_total;
       if (sample < r_total) 
       {
+        rCounter += ((double)total_mass) / ((double)r_total);
         for (int i = 0; i < numDocTopics; ++i) 
         {
           sample -= r_vector[docTopics[i]];
           if (sample <= 0.) 
           {
             newTopic = docTopics[i];
+            break;
           }
         }
         if(newTopic == -1)
         {
           // Overflow.
-          LOG(INFO) << "sample = " << sample << " has overflowed in r bucket.";
+          LOG(INFO) << "sample = " << sample << " has overflowed in r bucket. Counters are " << qCounter << " " << rCounter << " " << sCounter;
           newTopic = docTopics[numDocTopics - 1];
         }
       } 
       else 
       {
+        sCounter += ((double)total_mass) / ((double) s_total_);
         // s bucket.
         sample -= r_total;    
         for (int i = 0; i < K_; ++i) 
@@ -162,26 +232,30 @@ void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc)
           if (sample <= 0.) 
           {
             newTopic = i;
+            break;
           }
         }
         if(newTopic == -1)
         {
           // Overflow.
-          LOG(INFO) << "sample = " << sample << " has overflowed in s bucket.";
+          LOG(INFO) << "sample = " << sample << " has overflowed in s bucket. Counters are " << qCounter << " " << rCounter << " " << sCounter;
           newTopic = K_ - 1;
         }
       }
     }
     if(newTopic == -1)
+    {
       newTopic = K_ - 1;
+      LOG(INFO) << "global overflow. Counters are " << qCounter << " " << rCounter << " " << sCounter;
+    }
 
     //Add new variable assignment by updating the cache
     //global cache
     summary_vals_[newTopic]++;
-    word_topic_vals_[wordId][oldTopic]++;
-    word_topic_delta_[wordId][oldTopic]++;
-    if(word_topic_delta_[wordId][oldTopic] == (int16_t)0)
-      word_topic_delta_[wordId].erase(oldTopic);
+    word_topic_vals_[wordId][newTopic]++;
+    word_topic_delta_[wordId][newTopic]++;
+    if(word_topic_delta_[wordId][newTopic] == (int16_t)0)
+      word_topic_delta_[wordId].erase(newTopic);
     s_total_ -= s_vector_[newTopic];
     s_vector_[newTopic] = (alpha_ * beta_) / (((real_t)summary_vals_[newTopic]) + beta_sum_);
     s_total_ += s_vector_[newTopic];
@@ -190,13 +264,13 @@ void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc)
     if(docTopicSet.count(newTopic) == 0)
     {
       docTopicSet.insert(newTopic);
-      docTopicVector.push_back(newTopic);
+      docTopics.push_back(newTopic);
       numDocTopics++;
     }
     denom = ((real_t)summary_vals_[newTopic]) + beta_sum_;
     q_coeffs[newTopic] = (alpha_ + ((real_t)docTopicVector[newTopic])) / denom;
     r_total -= r_vector[newTopic];
-    r_vector[oldTopic] = (beta_ * ((real_t)docTopicVector[newTopic])) / denom;
+    r_vector[newTopic] = (beta_ * ((real_t)docTopicVector[newTopic])) / denom;
     r_total += r_vector[newTopic];
 
     // Finally, update the topic assignment z in doc, and update word-topic
@@ -280,6 +354,8 @@ void FastDocSamplerVirtual::pullRow(int32_t index, std::map<int32_t,int16_t> * c
 {
   std::map<int32_t, int16_t> oldRow = word_topic_vals_[index];
   std::map<int32_t, int16_t> newRow;
+
+  //fetch row from parameter server
   petuum::RowAccessor word_topic_row_acc;
   const auto & word_topic_row = word_topic_table_.Get<petuum::SortedVectorMapRow<int32_t> >(index, &word_topic_row_acc);
   std::vector<petuum::Entry<int32_t> > word_topic_row_buff;
@@ -293,11 +369,26 @@ void FastDocSamplerVirtual::pullRow(int32_t index, std::map<int32_t,int16_t> * c
     CHECK(count > 0) << "found non-positive word count";
     newRow[topic] = count;
   }
+
+  //build error strings
+  std::stringstream oldRowStream;
   typedef std::map<int32_t,int16_t>::iterator IterType;
+  for( IterType iter = oldRow.begin() ; iter != oldRow.end() ; ++iter )
+    oldRowStream << iter->first << ":" << iter->second << " ";
+  std::stringstream newRowStream;
+  for( IterType iter = newRow.begin() ; iter != newRow.end() ; ++iter )
+    newRowStream << iter->first << ":" << iter->second << " ";
+
+  //check row consistency
+  if(FLAGS_num_table_threads == 1 && FLAGS_num_comm_channels_per_client == 1 && FLAGS_client_id == 0 && thread_id == 0)
+    CHECK(oldRow == newRow) << "row changes in background, old row: " << oldRowStream.str() << " new row: " << newRowStream.str();
+
+  //record topic changes
   for( IterType iter = oldRow.begin() ; iter != oldRow.end() ; ++iter )
   {
     int32_t topic = iter->first;
     int16_t count = iter->second;
+    CHECK(count > 0) << "found non-positive count in old row " << count << " newrow " << newRowStream.str() << " oldrow size " << oldRowStream.str();
     if(changes->count(topic) == 0)
       changes->insert(std::pair<int32_t,int16_t>(topic, 0));
     changes->at(topic) -= count;
@@ -306,10 +397,13 @@ void FastDocSamplerVirtual::pullRow(int32_t index, std::map<int32_t,int16_t> * c
   {
     int32_t topic = iter->first;
     int16_t count = iter->second;
+    CHECK(count > 0) << "found non-positive count in new row " << count << " newrow " << newRowStream.str() << " oldrow size " << oldRowStream.str();
     if(changes->count(topic) == 0)
       changes->insert(std::pair<int32_t,int16_t>(topic, 0));
     changes->at(topic) += count;
   }
+
+  //update the cache
   word_topic_vals_[index] = newRow;
 }
 

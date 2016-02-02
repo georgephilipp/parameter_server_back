@@ -16,6 +16,8 @@
 #include <set>
 #include <leveldb/db.h>
 #include "common.hpp"
+#include "document_word_topics.hpp"
+#include <petuum_ps_common/include/system_gflags_declare.hpp>
 
 namespace lda {
 
@@ -48,6 +50,7 @@ void LDAEngine::Start() {
   FastDocSampler sampler;
   FastDocSamplerVirtual virtualSampler;
   lda_stats_->virtualSampler = &virtualSampler;
+  virtualSampler.thread_id = thread_id;
 
   UpdateScheduler rowScheduler(FLAGS_communication_factor, FLAGS_virtual_staleness, FLAGS_num_vocabs);
   RowUpdateItem item;
@@ -116,13 +119,15 @@ void LDAEngine::Start() {
     for(int i = vocab_id_start; i < vocab_id_end; ++i) {
       local_vocabs_.insert(i);
     }
+    if(FLAGS_virtual_staleness != -1 && thread_id == 0)
+    {
+      for(int i=0;i<max_vocab_id;i++)
+        local_vocabs_.insert(i);
+      CHECK((int)local_vocabs_.size() == FLAGS_num_vocabs) << "did not add everything to local vocabs";
+    }
   }
 
-  if(FLAGS_virtual_staleness != -1)
-  {
-    for(int i=0;i<max_vocab_id;i++)
-      local_vocabs_.insert(i);
-  }
+
 
   STATS_APP_INIT_END();
 
@@ -174,6 +179,60 @@ void LDAEngine::Start() {
     int rangeEnd = (int)std::round(doubleNumDocs * (doubleThreadId + 1.0) / doubleNumThreads);
     for(int j=rangeStart;j<rangeEnd;j++)
       workload.push_back(j);
+  }
+  int workloadSize = (int)workload.size();
+
+  //check the cache initialization
+  if(FLAGS_virtual_staleness != -1 && FLAGS_num_table_threads == 1 && FLAGS_num_comm_channels_per_client == 1 && client_id == 0 && thread_id == 0)
+  {
+    std::vector<std::map<int32_t,int16_t> > wordTopicTest(FLAGS_num_vocabs);
+    std::vector<int32_t> wordTopicTestSummary(FLAGS_num_topics, 0);
+    for(int i=0; i<workloadSize; i++)
+    {
+      int32_t docId = workload[i];
+      DocumentWordTopics* doc = &(*corpus_.GetDocById(docId));
+      for (WordOccurrenceIterator it(doc); !it.End(); it.Next()) 
+      {
+        int32_t topic = it.Topic();
+        int32_t wordId = it.Word();
+        CHECK(topic < FLAGS_num_topics) << "inadmissible topic is " << topic << " K_ is " << FLAGS_num_topics;
+        wordTopicTest[wordId][topic]++;
+        wordTopicTestSummary[topic]++;
+      }
+    }
+    std::vector<int32_t> summary = virtualSampler.get_summary_vals();
+    std::stringstream wordTopicTestSummaryString;
+    std::stringstream summaryString;
+    for(int i=0;i<(int)wordTopicTestSummary.size();i++)
+    {
+      wordTopicTestSummaryString << wordTopicTestSummary[i] << " ";
+    }
+    for(int i=0;i<(int)summary.size();i++)
+    {
+      summaryString << summary[i] << " ";
+    }
+    CHECK(summary == wordTopicTestSummary) << "failed wordTopicTest with summary " << wordTopicTestSummaryString.str() << " and stored summary " << summaryString.str();
+    typedef std::map<int32_t,int16_t>::iterator IterType;
+    for(int i=0;i<FLAGS_num_vocabs;i++)
+    {
+      std::map<int32_t,int16_t> fetchedRow = virtualSampler.get_word_topic_row(i);
+      std::stringstream wordTopicTestString;
+      std::stringstream fetchedRowString;
+      for(IterType iter = fetchedRow.begin(); iter != fetchedRow.end(); ++iter)
+      {
+        int32_t topic = iter->first;
+        int16_t count = iter->second;
+        fetchedRowString << topic << ":" << count << " ";
+      }
+      for(IterType iter = wordTopicTest[i].begin(); iter != wordTopicTest[i].end(); ++iter)
+      {
+        int32_t topic = iter->first;
+        int16_t count = iter->second;
+        wordTopicTestString << topic << ":" << count << " ";
+      }
+      CHECK(wordTopicTest[i] == fetchedRow) << "failed wordTopicTest with fetchedRow " << fetchedRowString.str() << " and test row " << wordTopicTestString.str() << " at vocab " << i;
+    }
+    LOG(INFO) << "passed first check!";
   }
 
   // ceil to ensure (num_docs_this_work_unit / num_dos_per_clock) does not
@@ -269,7 +328,6 @@ void LDAEngine::Start() {
     }
     else
     {
-      int workloadSize = (int)workload.size();
       for(int iter=0;iter<num_iters_per_work_unit;iter++)
       {
         for(int i=0; i<workloadSize; i++)
@@ -297,16 +355,69 @@ void LDAEngine::Start() {
   	  << " token/(thread*sec)"
           << "\tthroughput total: "
 	  << num_tokens_this_work_unit_ / seconds_this_work_unit
-  	  << " token/(thread*sec)";
+          << " token/(thread*sec)";
       }
       item = rowScheduler.next();
-      petuum::PSTableGroup::GlobalBarrier();
+      process_barrier_->wait();
       STATS_APP_DEFINED_ACCUM_SEC_END();
       petuum::HighResolutionTimer syncTimer;
       virtualSampler.push(item);
       petuum::PSTableGroup::Clock();
       virtualSampler.pull(item);
-      petuum::PSTableGroup::GlobalBarrier();
+      process_barrier_->wait();
+
+      //check the cache state
+      if(FLAGS_virtual_staleness != -1 && FLAGS_num_table_threads == 1 && FLAGS_num_comm_channels_per_client == 1 && client_id == 0 && thread_id == 0)
+      {
+        std::vector<std::map<int32_t,int16_t> > wordTopicTest(FLAGS_num_vocabs);
+        std::vector<int32_t> wordTopicTestSummary(FLAGS_num_topics, 0);
+        for(int i=0; i<workloadSize; i++)
+        {
+          int32_t docId = workload[i];
+          DocumentWordTopics* doc = &(*corpus_.GetDocById(docId));
+          for (WordOccurrenceIterator it(doc); !it.End(); it.Next()) 
+          {
+            int32_t topic = it.Topic();
+            int32_t wordId = it.Word();
+            CHECK(topic < FLAGS_num_topics) << "inadmissible topic is " << topic << " K_ is " << FLAGS_num_topics;
+            wordTopicTest[wordId][topic]++;
+            wordTopicTestSummary[topic]++;
+          }
+        }
+        std::vector<int32_t> summary = virtualSampler.get_summary_vals();
+        std::stringstream wordTopicTestSummaryString;
+        std::stringstream summaryString;
+        for(int i=0;i<(int)wordTopicTestSummary.size();i++)
+        {
+          wordTopicTestSummaryString << wordTopicTestSummary[i] << " ";
+        }
+        for(int i=0;i<(int)summary.size();i++)
+        {
+          summaryString << summary[i] << " ";
+        }
+        CHECK(summary == wordTopicTestSummary) << "failed wordTopicTest with summary " << wordTopicTestSummaryString.str() << " and stored summary " << summaryString.str();
+        typedef std::map<int32_t,int16_t>::iterator IterType;
+        for(int i=0;i<FLAGS_num_vocabs;i++)
+        {
+          std::map<int32_t,int16_t> fetchedRow = virtualSampler.get_word_topic_row(i);
+          std::stringstream wordTopicTestString;
+          std::stringstream fetchedRowString;
+          for(IterType iter = fetchedRow.begin(); iter != fetchedRow.end(); ++iter)
+          {
+            int32_t topic = iter->first;
+            int16_t count = iter->second;
+            fetchedRowString << topic << ":" << count << " ";
+          }
+          for(IterType iter = wordTopicTest[i].begin(); iter != wordTopicTest[i].end(); ++iter)
+          {
+            int32_t topic = iter->first;
+            int16_t count = iter->second;
+            wordTopicTestString << topic << ":" << count << " ";
+          }
+          CHECK(wordTopicTest[i] == fetchedRow) << "failed wordTopicTest with fetchedRow " << fetchedRowString.str() << " and test row " << wordTopicTestString.str() << " at vocab " << i;
+        }
+      }
+
       STATS_APP_DEFINED_ACCUM_SEC_BEGIN();
       double syncTime = syncTimer.elapsed();
       if(thread_id == 0)
