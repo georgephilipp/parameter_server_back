@@ -18,7 +18,7 @@
 namespace lda {
 
 FastDocSamplerVirtual::FastDocSamplerVirtual() :
-    rng_engine_(time(NULL)),
+    rng_engine_(0),
     uniform_zero_one_dist_(0, 1),
     zero_one_rng_(new rng_t(rng_engine_, uniform_zero_one_dist_)) {
   Context& context = Context::get_instance();
@@ -88,6 +88,7 @@ void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc)
     s_total_ += s_vector_[oldTopic];
     //local cache
     docTopicVector[oldTopic]--;
+    //docTopicSet: constant
     //docTopics: constant
     //numDocTopics: constant
     real_t denom = ((real_t)summary_vals_[oldTopic]) + beta_sum_;
@@ -174,7 +175,8 @@ void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc)
 
     //sample
     real_t total_mass = q_total + r_total + s_total_;
-    real_t sample = (*zero_one_rng_)() * total_mass;
+    real_t randNum = (*zero_one_rng_)();
+    real_t sample = randNum * total_mass;
     int32_t newTopic = -1;
 
     if (sample < q_total) 
@@ -248,7 +250,6 @@ void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc)
       newTopic = K_ - 1;
       LOG(INFO) << "global overflow. Counters are " << qCounter << " " << rCounter << " " << sCounter;
     }
-
     //Add new variable assignment by updating the cache
     //global cache
     summary_vals_[newTopic]++;
@@ -264,7 +265,7 @@ void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc)
     if(docTopicSet.count(newTopic) == 0)
     {
       docTopicSet.insert(newTopic);
-      docTopics.push_back(newTopic);
+      docTopics = std::vector<int32_t>(docTopicSet.begin(), docTopicSet.end());
       numDocTopics++;
     }
     denom = ((real_t)summary_vals_[newTopic]) + beta_sum_;

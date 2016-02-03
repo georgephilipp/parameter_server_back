@@ -120,10 +120,17 @@ void FastDocSampler::SampleOneDoc(DocumentWordTopics* doc) {
 
       STATS_APP_DEFINED_ACCUM_VAL_INC(word_topic_row_buff_.size());
 
+      std::map<int32_t,int32_t> wordTopicMap;
       for (auto & wt_it : word_topic_row_buff_) {
         int32_t topic = wt_it.first;
         int32_t count = std::max(wt_it.second, 0);
-
+        wordTopicMap[topic] = count;
+      }
+      typedef std::map<int32_t,int32_t>::iterator it_type;
+      for(it_type iterator = wordTopicMap.begin(); iterator != wordTopicMap.end(); iterator++)
+      {
+        int32_t topic = iterator->first;
+        int32_t count = iterator->second;
         nonzero_q_terms_[num_nonzero_q_terms_] = (topic == old_topic) ?
           (q_coeff_[topic] * (count - 1)) : (q_coeff_[topic] * count);
         nonzero_q_terms_topic_[num_nonzero_q_terms_] = topic;
@@ -213,8 +220,9 @@ void FastDocSampler::ComputeAuxVariables() {
 
 int32_t FastDocSampler::Sample() {
   // Shooting a dart on [q_sum_ | r_sum_ | s_sum_] interval.
-  real_t total_mass = q_sum_ + r_sum_ + s_sum_;
-  real_t sample = (*zero_one_rng_)() * total_mass;
+  real_t mass = q_sum_ + r_sum_ + s_sum_;
+  real_t randNum = (*zero_one_rng_)();
+  real_t sample = randNum * mass;
 
   const petuum::DenseRow<int32_t> &summary_row
     = summary_row_accessor_.Get<petuum::DenseRow<int32_t> >();
