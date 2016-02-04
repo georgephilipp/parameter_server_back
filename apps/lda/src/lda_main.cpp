@@ -13,50 +13,96 @@
 #include <vector>
 #include "common.hpp"
 #include "corpus.hpp"
+#include <iostream>
+#include <fstream>
 
-// Petuum Parameters
-DEFINE_uint64(word_topic_table_process_cache_capacity, 100000,
-              "Word topic table process cache capacity");
-
-//georg: virtual syncing
+//LDA parms
+//data
+DEFINE_string(doc_file, "", "File containing document in LibSVM format. Each document is a line.");
+DEFINE_int32(num_vocabs, -1, "Number of vocabs.");
+DEFINE_int32(max_vocab_id, -1, "Maximum word index, which could be different from num_vocabs if there are unused vocab indices.");
+DEFINE_int32(num_topics, 100, "Number of topics.");
+//model
+DEFINE_double(alpha, 1, "Dirichlet prior on document-topic vectors.");
+DEFINE_double(beta, 0.1, "Dirichlet prior on vocab-topic vectors.");
+//network
 DEFINE_int32(communication_factor, -1, "The factor by which communication is artificially delayed");
 DEFINE_int32(virtual_staleness, -1, "Artificial staleness");
 DEFINE_bool(is_bipartite, false, "bipartite topology in virtual staleness");
 DEFINE_bool(is_local_sync, false, "local styncing in bipartite topology in virtual staleness");
-
-// LDA Parameters
-DEFINE_string(doc_file, "",
-    "File containing document in LibSVM format. Each document is a line.");
-DEFINE_int32(num_vocabs, -1, "Number of vocabs.");
-DEFINE_int32(max_vocab_id, -1, "Maximum word index, which could be different "
-    "from num_vocabs if there are unused vocab indices.");
-DEFINE_double(alpha, 1, "Dirichlet prior on document-topic vectors.");
-DEFINE_double(beta, 0.1, "Dirichlet prior on vocab-topic vectors.");
-DEFINE_int32(num_topics, 100, "Number of topics.");
+//training
 DEFINE_int32(num_work_units, 1, "Number of work units");
-DEFINE_int32(compute_ll_interval, 1,
-    "Copmute log likelihood over local dataset on every N iterations");
+DEFINE_int32(compute_ll_interval, 1, "Compute log likelihood over local dataset on every N iterations");
+DEFINE_int32(num_iters_per_work_unit, 1, "number of iterations per work unit");
+DEFINE_int32(num_clocks_per_work_unit, 1, "number of clocks per work unit");
 
-// Misc
+// System Parameters
+DEFINE_uint64(word_topic_table_process_cache_capacity, 100000, "Word topic table process cache capacity");
+
+// paths
 DEFINE_string(output_file_prefix, "", "LDA results.");
+DEFINE_string(signal_file_path, "", "signal_file_path");
 
 // No need to change the following.
 DEFINE_int32(word_topic_table_id, 1, "ID within Petuum-PS");
 DEFINE_int32(summary_table_id, 2, "ID within Petuum-PS");
 DEFINE_int32(llh_table_id, 3, "ID within Petuum-PS");
 
-DEFINE_int32(num_iters_per_work_unit, 1, "number of iterations per work unit");
-DEFINE_int32(num_clocks_per_work_unit, 1, "number of clocks per work unit");
-
 int32_t kSortedVectorMapRowTypeID = 1;
 int32_t kDenseRowIntTypeID = 2;
 int32_t kDenseRowDoubleTypeID = 3;
+
+template<typename type>
+void wls(std::string path, std::vector<type> input, std::ios_base::openmode mode)
+{
+	std::ofstream stream;
+	stream.open(path, mode);
+	CHECK(!stream.fail()) << "output file not found";
+	int size = (int)input.size();
+	for(int i=0;i<size;i++)
+	{
+		type row = input[i];
+		if(i!=0)
+			stream << '\n';
+		stream << row;
+	}
+	stream.close();
+}
 
 int main(int argc, char *argv[]) {
   google::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
 
   LOG(INFO) << "LDA starts here! dense serialize = " << FLAGS_oplog_dense_serialized;
+
+  if(true)
+  {
+    LOG(INFO) << "doc_file " << FLAGS_doc_file;
+    LOG(INFO) << "num_vocabs " << FLAGS_num_vocabs;
+    LOG(INFO) << "max_vocab_id " << FLAGS_max_vocab_id;
+    LOG(INFO) << "num_topics " << FLAGS_num_topics;
+    LOG(INFO) << "alpha " << FLAGS_alpha;
+    LOG(INFO) << "beta " << FLAGS_beta;
+    LOG(INFO) << "communication_factor " << FLAGS_communication_factor;
+    LOG(INFO) << "virtual_staleness " << FLAGS_virtual_staleness;
+    LOG(INFO) << "is_bipartite " << FLAGS_is_bipartite;
+    LOG(INFO) << "is_local_sync " << FLAGS_is_local_sync;
+    LOG(INFO) << "num_work_units " << FLAGS_num_work_units;
+    LOG(INFO) << "compute_ll_interval " << FLAGS_compute_ll_interval;
+    LOG(INFO) << "num_iters_per_work_unit " << FLAGS_num_iters_per_work_unit;
+    LOG(INFO) << "num_clocks_per_work_unit " << FLAGS_num_clocks_per_work_unit;
+    LOG(INFO) << "word_topic_table_process_cache_capacity " << FLAGS_word_topic_table_process_cache_capacity;
+    LOG(INFO) << "output_file_prefix " << FLAGS_output_file_prefix;
+    LOG(INFO) << "stats_path " << FLAGS_stats_path;
+    LOG(INFO) << "signal_file_path " << FLAGS_signal_file_path;
+    LOG(INFO) << "table_staleness " << FLAGS_table_staleness;
+    LOG(INFO) << "consistency_model " << FLAGS_consistency_model;
+    LOG(INFO) << "client_bandwidth_mbps " << FLAGS_client_bandwidth_mbps;
+    LOG(INFO) << "server_bandwidth_mbps " << FLAGS_server_bandwidth_mbps;
+    LOG(INFO) << "num_comm_channels_per_client " << FLAGS_num_comm_channels_per_client;
+    LOG(INFO) << "num_table_threads " << FLAGS_num_table_threads;
+    LOG(INFO) << "hostfile " << FLAGS_hostfile;
+  }
 
   //some checks
   CHECK(FLAGS_communication_factor == -1 || FLAGS_communication_factor >= 1) << "bad range for communication factor";
@@ -68,9 +114,8 @@ int main(int argc, char *argv[]) {
   CHECK(FLAGS_communication_factor == -1 || FLAGS_num_vocabs == FLAGS_max_vocab_id + 1) << "cannot have empty vocab ids for virtual staleness";
   CHECK(FLAGS_communication_factor == -1 || FLAGS_num_clocks_per_work_unit == 1) << "does not supported fractional iterations with virtual staleness";
   CHECK(FLAGS_communication_factor == -1 || FLAGS_table_staleness == 0) << "cannot have virtual staleness and actual staleness";
-
-/////////////////
-CHECK(!FLAGS_is_local_sync) << "not yet implemented";
+  
+  CHECK(!FLAGS_is_local_sync) << "not yet implemented";
 
   // Read in data first to get # of vocabs in this partition.
   petuum::TableGroupConfig table_group_config;
@@ -171,6 +216,8 @@ CHECK(!FLAGS_is_local_sync) << "not yet implemented";
  
   LOG(INFO) << "LDA finished!";
   petuum::PSTableGroup::ShutDown();
+  if(FLAGS_signal_file_path != "" && FLAGS_client_id == 0)
+    wls<std::string>(FLAGS_signal_file_path, {"done"}, std::ios_base::trunc);
   LOG(INFO) << "LDA shut down!";
   return 0;
 }
