@@ -414,7 +414,7 @@ void FastDocSamplerVirtual::pushMany(std::vector<int32_t> indeces)
   int indexSize = (int)indeces.size();
   for(int i=0;i<indexSize;i++)
   {
-    pushRow(i);
+    pushRow(indeces[i]);
   }
 }
 
@@ -424,7 +424,7 @@ void FastDocSamplerVirtual::pullMany(std::vector<int32_t> indeces)
   std::map<int32_t,int16_t> changes;
   for(int i=0;i<indexSize;i++)
   {
-    pullRow(i, &changes);
+    pullRow(indeces[i], &changes);
   }
   
   //summary row
