@@ -68,7 +68,7 @@ GLOG_logtostderr=true \
     --server_bandwidth_mbps $server_bandwidth_mbps \
     --bg_idle_milli $bg_idle_milli \
     --thread_oplog_batch_size $thread_oplog_batch_size \
-    --row_candidate_factor ${row_candidate_factor}
+    --row_candidate_factor ${row_candidate_factor} \
     --server_idle_milli $server_idle_milli \
     --update_sort_policy $update_sort_policy \
     --numa_opt=${numa_opt} \
