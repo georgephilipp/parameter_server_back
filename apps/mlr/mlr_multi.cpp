@@ -1244,7 +1244,7 @@ bool errorBasedStoppageCriterion(std::vector<std::string> row, double thresh, in
     }
 }*/
 
-IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, int32_t>& muEpochMap)
+IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<std::string, int32_t>& muEpochMap)
 {
     double targetError = FLAGS_target_error;
     int errorField = FLAGS_error_field;
@@ -1262,7 +1262,7 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
 		bottomMu = bottomMu / ((double)(FLAGS_virtual_staleness+1));
 	double centerMu = pow(10, log10(topMu) / 2 + log10(bottomMu) / 2);
 
-	muEpochMap[centerMu] = ps.num_epochs;
+	muEpochMap[gstd::Printer::p(centerMu)] = ps.num_epochs;
 	ps.learning_rate = centerMu;
 	ps.set();
 	LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
@@ -1276,7 +1276,7 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
 	if(numCenterEpochsNeeded == startEpochNumber)
 		centerVal = centerVal * (1+centerFinalError);
 
-	muEpochMap[topMu] = ps.num_epochs;
+	muEpochMap[gstd::Printer::p(topMu)] = ps.num_epochs;
 	ps.learning_rate = topMu;
 	ps.set();
 	LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
@@ -1290,7 +1290,7 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
 	if(numTopEpochsNeeded == startEpochNumber)
 		topVal = topVal * (1+topFinalError);
 
-	muEpochMap[bottomMu] = ps.num_epochs;
+	muEpochMap[gstd::Printer::p(bottomMu)] = ps.num_epochs;
 	ps.learning_rate = bottomMu;
 	ps.set();
 	LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
@@ -1309,7 +1309,7 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
     while(1)
     {
         double nextMu = pow(10,controller.get());
-        muEpochMap[nextMu] = ps.num_epochs;
+        muEpochMap[gstd::Printer::p(nextMu)] = ps.num_epochs;
         ps.learning_rate = nextMu;
         ps.set();
         LOG(INFO) << "\n\n LR SEARCH. Running learning rate with search rate " << ps.learning_rate << " and starting epoch number " << ps.num_epochs << "\n\n";
@@ -1412,10 +1412,10 @@ IntervalSearchController runLearningRateSearch(ParmStruct ps, std::map<double, i
 	}
 }*/
 
-IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std::map<double, int32_t> >& muDecayEpochMap, std::map<double, IntervalSearchController>& muControllers)
+IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<std::string, std::map<std::string, int32_t> >& muDecayEpochMap, std::map<double, IntervalSearchController>& muControllers)
 {
 	double bestVal = (double)ps.num_epochs;
-	std::map<double, int32_t> muEpochMap;
+	std::map<std::string, int32_t> muEpochMap;
 
 	double topRate = FLAGS_top_decay_rate;
 	if(FLAGS_virtual_staleness != -1)
@@ -1431,7 +1431,7 @@ IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std
 	IntervalSearchController muController = runLearningRateSearch(ps, muEpochMap);
 	double centerVal = muController.getCenterVal();
 	muControllers[centerRate] = muController;
-	muDecayEpochMap[centerRate] = muEpochMap;
+	muDecayEpochMap[gstd::Printer::p(centerRate)] = muEpochMap;
 	//write the log
 	std::vector<std::vector<std::string> > searchLog = muController.getLog();
 	searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(centerRate) + " ratepoint " + gstd::Printer::p(log10(-log10(centerRate))) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " with best point " + gstd::Printer::p(muController.getPointCenter()) + " with best val " + gstd::Printer::p(muController.getCenterVal()) + " is:"});
@@ -1448,7 +1448,7 @@ IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std
 	muController = runLearningRateSearch(ps, muEpochMap);
 	double topVal = muController.getCenterVal();
 	muControllers[topRate] = muController;
-	muDecayEpochMap[topRate] = muEpochMap;
+	muDecayEpochMap[gstd::Printer::p(topRate)] = muEpochMap;
 	//write the log
 	searchLog = muController.getLog();
 	searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(topRate) + " ratepoint " + gstd::Printer::p(log10(-log10(topRate))) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " with best point " + gstd::Printer::p(muController.getPointCenter()) + " with best val " + gstd::Printer::p(muController.getCenterVal()) + " is:"});
@@ -1465,7 +1465,7 @@ IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std
 	muController = runLearningRateSearch(ps, muEpochMap);
 	double bottomVal = muController.getCenterVal();
 	muControllers[bottomRate] = muController;
-	muDecayEpochMap[bottomRate] = muEpochMap;
+	muDecayEpochMap[gstd::Printer::p(bottomRate)] = muEpochMap;
 	//write the log
 	searchLog = muController.getLog();
 	searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(bottomRate) + " ratepoint " + gstd::Printer::p(log10(-log10(bottomRate))) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " with best point " + gstd::Printer::p(muController.getPointCenter()) + " with best val " + gstd::Printer::p(muController.getCenterVal()) + " is:"});
@@ -1490,7 +1490,7 @@ IntervalSearchController runLRandDecaySearch(ParmStruct ps, std::map<double, std
 		//write the log
 		searchLog = muController.getLog();
 		searchLog.insert(searchLog.begin(), {"log for rate " + gstd::Printer::p(nextRate) + " ratepoint " + gstd::Printer::p(log10(-log10(nextRate))) + " with best mu " + gstd::Printer::p(pow(10,muController.getPointCenter())) + " with best point " + gstd::Printer::p(muController.getPointCenter()) + " with best val " + gstd::Printer::p(muController.getCenterVal()) + " is:"});
-		muDecayEpochMap[nextRate] = muEpochMap;
+		muDecayEpochMap[gstd::Printer::p(nextRate)] = muEpochMap;
 		muControllers[nextRate] = muController;
 		gstd::Writer::rs<std::string>(ps.get_output_file_prefix() + "_searchLog", searchLog, " ", false, std::ios::app);
 		if(controller.consume(nextVal))
@@ -1572,7 +1572,7 @@ while(1)
 		searchLog.clear();
 
 		gstd::check(!FLAGS_learning_rate_search, "if FLAGS_lr_and_decay_search true, FLAGS_learning_rate_search must be false");
-		std::map<double, std::map<double, int32_t> > muDecayEpochMap;
+		std::map<std::string, std::map<std::string, int32_t> > muDecayEpochMap;
 		std::map<double, IntervalSearchController> muControllers;
 		IntervalSearchController controller = runLRandDecaySearch(ps, muDecayEpochMap, muControllers);
 		if((int)muDecayEpochMap.size() == 0)
@@ -1585,7 +1585,7 @@ while(1)
 		}
 		ps.decay_rate = pow(10, -pow(10, controller.getPointCenter()));
 		ps.learning_rate = pow(10, muControllers[ps.decay_rate].getPointCenter());
-		ps.num_epochs = muDecayEpochMap[ps.decay_rate][ps.learning_rate];
+		ps.num_epochs = muDecayEpochMap[gstd::Printer::p(ps.decay_rate)][gstd::Printer::p(ps.learning_rate)];
 		ps.set();
 		double targetError = FLAGS_target_error;
         int errorField = FLAGS_error_field;
@@ -1602,7 +1602,7 @@ while(1)
 	}
 	else if(FLAGS_learning_rate_search)
 	{
-            std::map<double, int32_t> muEpochMap;
+            std::map<std::string, int32_t> muEpochMap;
 	    IntervalSearchController controller = runLearningRateSearch(ps, muEpochMap);
 	    if((int)muEpochMap.size() == 0)
 	    {
@@ -1613,7 +1613,7 @@ while(1)
 	  	continue;
 	    }
 	    ps.learning_rate = pow(10,controller.getPointCenter());
-            ps.num_epochs = muEpochMap[ps.learning_rate];
+            ps.num_epochs = muEpochMap[gstd::Printer::p(ps.learning_rate)];
             ps.set();
             double targetError = FLAGS_target_error;
             int errorField = FLAGS_error_field;

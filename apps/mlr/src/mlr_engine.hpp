@@ -92,7 +92,13 @@ private:
 
   std::unique_ptr<boost::barrier> process_barrier_;
 
-  std::unique_ptr<boost::barrier> process_barrier_push_;
+  std::unique_ptr<boost::barrier> process_barrier_2_;
+ 
+  std::unique_ptr<boost::barrier> process_barrier_3_;
+    
+  std::vector<int> barrierCounter;
+    
+  void wait(int thread_id);
 
   // ============ PS Tables ============
   petuum::Table<float> loss_table_;

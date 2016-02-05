@@ -45,7 +45,10 @@ MLREngine::MLREngine() : thread_counter_(0) {
   perform_test_ = FLAGS_perform_test;
   num_train_eval_ = FLAGS_num_train_eval;
   process_barrier_.reset(new boost::barrier(FLAGS_num_table_threads));
-  process_barrier_push_.reset(new boost::barrier(FLAGS_num_table_threads));
+  process_barrier_2_.reset(new boost::barrier(FLAGS_num_table_threads));
+  process_barrier_3_.reset(new boost::barrier(FLAGS_num_table_threads));
+  for(int i=0;i<FLAGS_num_table_threads;i++)
+    barrierCounter.push_back(0);
   std::string meta_file = FLAGS_train_file + ((FLAGS_global_data || FLAGS_force_global_file_names) ? "" : "." + std::to_string(FLAGS_client_id)) + ".meta";
   w_table_num_cols_ = FLAGS_w_table_num_cols;
   petuum::ml::MetafileReader mreader(meta_file);
@@ -169,6 +172,32 @@ void MLREngine::InitWeights(const std::string& weight_file) {
     << weight_init_timer.elapsed();
 }
 
+void MLREngine::wait(int thread_id)
+{
+    if(barrierCounter[thread_id] == 0)
+    {
+        process_barrier_2_->wait();
+        if(thread_id == 0)
+            process_barrier_.reset(new boost::barrier(FLAGS_num_table_threads));
+    }
+    else if(barrierCounter[thread_id] == 1)
+    {
+        process_barrier_3_->wait();
+        if(thread_id == 0)
+            process_barrier_2_.reset(new boost::barrier(FLAGS_num_table_threads));
+    }
+    else if(barrierCounter[thread_id] == 2)
+    {
+        process_barrier_->wait();
+        if(thread_id == 0)
+            process_barrier_3_.reset(new boost::barrier(FLAGS_num_table_threads));
+    }
+    else
+        CHECK(false) << "invalid barrier counter";
+    barrierCounter[thread_id]++;
+    barrierCounter[thread_id] = barrierCounter[thread_id] % 3;
+}
+    
 //this is run thread-wise
 void MLREngine::Start() {
   //register thread
@@ -315,18 +344,7 @@ void MLREngine::Start() {
 //LOG(INFO) << client_id << " is starting push for epoch " << epoch+1 << " total time is " << t.t(false);
         if(num_batches_per_epoch == 1)
         {
-          if(epoch % 2 == 0)
-          {
-            process_barrier_push_->wait();
-            if(thread_id == 0)
-              process_barrier_.reset(new boost::barrier(FLAGS_num_table_threads));
-          }
-          else
-          {
-            process_barrier_->wait();
-            if(thread_id == 0)
-              process_barrier_push_.reset(new boost::barrier(FLAGS_num_table_threads));
-          }
+          wait(thread_id);
         }
         if(FLAGS_virtual_staleness != -1)
           mlr_solver->push(item);
@@ -353,6 +371,10 @@ void MLREngine::Start() {
       mlr_solver->pull(item);
     else
       mlr_solver->pull();
+    if(num_batches_per_epoch == 1)
+    {
+      wait(thread_id);
+    }
 ///////////////
 //if(thread_id == 0)
 //LOG(INFO) << client_id << " has finished pull for epoch " << epoch+1 << " total time is " << t.t(false);
@@ -417,6 +439,7 @@ val4 = eval_timer.elapsed();
                      num_test_data_, eval_counter, &predict_buff);
   }
   petuum::PSTableGroup::GlobalBarrier();
+  wait(thread_id);
   if (client_id == 0 && thread_id == 0) {
     loss_table_.Inc(eval_counter, kColIdxLossTableEpoch, num_epochs);
     loss_table_.Inc(eval_counter, kColIdxLossTableBatch,
@@ -425,6 +448,10 @@ val4 = eval_timer.elapsed();
         total_timer.elapsed());
     loss_table_.Inc(eval_counter, kColIdxLossTableRegLoss,
         mlr_solver->EvaluateL2RegLoss());
+   }
+   petuum::PSTableGroup::GlobalBarrier();
+   wait(thread_id);
+   if (client_id == 0 && thread_id == 0) {
 /////////////////
 //LOG(INFO) << "Before printalleval " << checkpoint_timer.elapsed();
     LOG(INFO) << std::endl << PrintAllEval(eval_counter);
