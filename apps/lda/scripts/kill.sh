@@ -33,6 +33,11 @@ for ip in $unique_host_list; do
   ssh $ssh_options $ip \
     killall -q $progname
 done
+echo "Killing previous instances of '$multiname' on servers, please wait..."
+for ip in $unique_host_list; do
+  ssh $ssh_options $ip \
+    killall -q $multiname
+done
 echo "All done!"
 # exit
 
