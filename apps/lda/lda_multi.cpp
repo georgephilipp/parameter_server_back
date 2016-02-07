@@ -95,7 +95,7 @@ std::vector<std::vector<std::string> > rrs(std::string path, char delim)
 	std::vector<std::vector<std::string> > result;
 	std::ifstream stream;
 	stream.open(path);
-	CHECK(!stream.fail()) << "output file not found";	
+	CHECK(!stream.fail()) << "output file not found at path " << path;	
 	while(!stream.eof())
 	{
 		std::string line;
@@ -673,7 +673,7 @@ void run()
 "app_root=`dirname $script_dir`\n"
 "\n"
 "# input parms\n"
-"doc_file=\"" + FLAGS_doc_file + FLAGS_doc_file_suffix + "\"\n"
+"doc_file=\"" + FLAGS_doc_file + FLAGS_doc_file_suffix + "." + printInt(FLAGS_num_clients) + "\"\n"
 "num_vocabs=" + printInt(FLAGS_num_vocabs) + "\n"
 "max_vocab_id=" + printInt(FLAGS_max_vocab_id) + "\n"
 "num_topics=" + printInt(FLAGS_num_topics) + "\n"
@@ -698,7 +698,7 @@ void run()
 "hostfile=\"" + FLAGS_hostfile + "\"\n"
 "\n"
 "# constant system parms\n"
-"word_topic_table_process_cache_capacity=$(( max_vocab_id+1 ))\n"
+"word_topic_table_process_cache_capacity=" + (FLAGS_is_local_sync ? printInt(2*(FLAGS_max_vocab_id+1)) : printInt(FLAGS_max_vocab_id+1))+ "\n"
 "bg_idle_milli=2\n"
 "server_idle_milli=2\n"
 "thread_oplog_batch_size=14000\n"
