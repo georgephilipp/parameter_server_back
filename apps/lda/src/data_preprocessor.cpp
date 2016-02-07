@@ -57,6 +57,7 @@ int main(int argc, char* argv[]) {
   size_t num_bytes;
 
   FILE *data_stream = fopen(FLAGS_data_file.c_str(), "r");
+  LOG(INFO) << "input data file " << FLAGS_data_file;
   CHECK_NOTNULL(data_stream);
   LOG(INFO) << "Reading from data file " << FLAGS_data_file;
   int doc_id = 0;
