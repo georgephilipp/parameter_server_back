@@ -3,7 +3,7 @@
 table_staleness=0
 consistency_model=SSPPush
 
-num_work_units=101
+num_work_units=4
 
 #dataset=nytimes
 #dataset=20news
@@ -14,8 +14,8 @@ num_worker_threads=1
 
 num_topics=100
 
-communication_factor=1
-virtual_staleness=1
+communication_factor=-1
+virtual_staleness=-1
 is_bipartite=false
 is_local_sync=false
 
@@ -24,8 +24,8 @@ num_iters_per_work_unit=1
 
 bg_idle_milli=2
 server_idle_milli=2
-client_bandwidth_mbps=160
-server_bandwidth_mbps=160
+client_bandwidth_mbps=0
+server_bandwidth_mbps=0
 thread_oplog_batch_size=14000
 row_candidate_factor=100
 update_sort_policy=RelativeMagnitude
@@ -89,7 +89,7 @@ host_filename="../../../machinefiles/localserver"
 #host_filename="../../machinefiles/servers.mylda.ssp"
 #host_filename="../../machinefiles/servers.mylda.64"
 
-compute_ll_interval=5
+compute_ll_interval=1
 
 stats_path=${app_output_dir}/lda_stats.yaml
 
@@ -97,7 +97,7 @@ log_dir=${app_output_dir}"/logs.lda.s"$table_staleness
 log_dir="${log_dir}.C${consistency_model}"
 log_dir="${log_dir}.BW${client_bandwidth_mbps}"
 
-
+multiname=lda_multi
 progname=lda_main
 
 alpha=0.1
