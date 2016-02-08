@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
 
   LOG(INFO) << "LDA starts here! dense serialize = " << FLAGS_oplog_dense_serialized;
 
-  if(true)
+  if(false)
   {
     LOG(INFO) << "doc_file " << FLAGS_doc_file;
     LOG(INFO) << "num_vocabs " << FLAGS_num_vocabs;
@@ -114,8 +114,6 @@ int main(int argc, char *argv[]) {
   CHECK(FLAGS_communication_factor == -1 || FLAGS_num_vocabs == FLAGS_max_vocab_id + 1) << "cannot have empty vocab ids for virtual staleness";
   CHECK(FLAGS_communication_factor == -1 || FLAGS_num_clocks_per_work_unit == 1) << "does not supported fractional iterations with virtual staleness";
   CHECK(FLAGS_communication_factor == -1 || FLAGS_table_staleness == 0) << "cannot have virtual staleness and actual staleness";
-  
-  CHECK(!FLAGS_is_local_sync) << "not yet implemented";
 
   // Read in data first to get # of vocabs in this partition.
   petuum::TableGroupConfig table_group_config;
