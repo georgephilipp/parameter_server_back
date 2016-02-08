@@ -83,6 +83,13 @@ void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc)
     word_topic_delta_[wordId][oldTopic]--;
     if(word_topic_delta_[wordId][oldTopic] == (int16_t)0)
       word_topic_delta_[wordId].erase(oldTopic);
+    if(FLAGS_is_local_sync)
+    {
+      word_topic_delta_other_[wordId][oldTopic]--;
+      if(word_topic_delta_other_[wordId][oldTopic] == (int16_t)0)
+        word_topic_delta_other_[wordId].erase(oldTopic);
+    }
+
     s_total_ -= s_vector_[oldTopic];
     s_vector_[oldTopic] = (alpha_ * beta_) / (((real_t)summary_vals_[oldTopic]) + beta_sum_);
     s_total_ += s_vector_[oldTopic];
@@ -257,6 +264,12 @@ void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc)
     word_topic_delta_[wordId][newTopic]++;
     if(word_topic_delta_[wordId][newTopic] == (int16_t)0)
       word_topic_delta_[wordId].erase(newTopic);
+    if(FLAGS_is_local_sync)
+    {
+      word_topic_delta_other_[wordId][newTopic]++;
+      if(word_topic_delta_other_[wordId][newTopic] == (int16_t)0)
+        word_topic_delta_other_[wordId].erase(newTopic);
+    }
     s_total_ -= s_vector_[newTopic];
     s_vector_[newTopic] = (alpha_ * beta_) / (((real_t)summary_vals_[newTopic]) + beta_sum_);
     s_total_ += s_vector_[newTopic];
@@ -288,7 +301,10 @@ void FastDocSamplerVirtual::buildGlobalCache()
   //word-topic table and delta
   word_topic_vals_.clear();
   word_topic_delta_.clear();
+  if(FLAGS_is_local_sync)
+    word_topic_delta_other_.clear();
   std::map<int32_t,int16_t> emptyRow;
+
   for(int32_t wordId = 0;wordId < V_;wordId++)
   {
     std::map<int32_t,int16_t> row;
@@ -307,6 +323,8 @@ void FastDocSamplerVirtual::buildGlobalCache()
     }
     word_topic_vals_.push_back(row);
     word_topic_delta_.push_back(emptyRow);
+    if(FLAGS_is_local_sync)
+      word_topic_delta_other_.push_back(emptyRow);
   }
 
   //summary row
@@ -335,7 +353,7 @@ void FastDocSamplerVirtual::buildGlobalCache()
 }
 
 
-void FastDocSamplerVirtual::pushRow(int32_t index)
+void FastDocSamplerVirtual::pushRow(int32_t index, bool other)
 {
   int numUpdates = (int)word_topic_delta_[index].size();
   std::map<int32_t,int16_t> row = word_topic_delta_[index];
@@ -347,18 +365,34 @@ void FastDocSamplerVirtual::pushRow(int32_t index)
     word_topic_updates.UpdateSet(counter, iter->first, (int32_t)iter->second);
     counter++;
   }
-  word_topic_table_.BatchInc(index, word_topic_updates);
+  word_topic_table_.BatchInc(index + (other ? FLAGS_num_vocabs : 0), word_topic_updates);
   word_topic_delta_[index].clear();
 }
 
-void FastDocSamplerVirtual::pullRow(int32_t index, std::map<int32_t,int16_t> * changes)
+void FastDocSamplerVirtual::pushRowOther(int32_t index, bool other)
+{
+  int numUpdates = (int)word_topic_delta_other_[index].size();
+  std::map<int32_t,int16_t> row = word_topic_delta_other_[index];
+  petuum::UpdateBatch<int32_t> word_topic_updates(numUpdates);
+  typedef std::map<int32_t,int16_t>::iterator IterType;
+  int32_t counter = 0;
+  for( IterType iter = row.begin() ; iter != row.end() ; ++iter )
+  {
+    word_topic_updates.UpdateSet(counter, iter->first, (int32_t)iter->second);
+    counter++;
+  }
+  word_topic_table_.BatchInc(index + (other ? FLAGS_num_vocabs : 0), word_topic_updates);
+  word_topic_delta_other_[index].clear();
+}
+
+void FastDocSamplerVirtual::pullRow(int32_t index, bool other, std::map<int32_t,int16_t> * changes)
 {
   std::map<int32_t, int16_t> oldRow = word_topic_vals_[index];
   std::map<int32_t, int16_t> newRow;
 
   //fetch row from parameter server
   petuum::RowAccessor word_topic_row_acc;
-  const auto & word_topic_row = word_topic_table_.Get<petuum::SortedVectorMapRow<int32_t> >(index, &word_topic_row_acc);
+  const auto & word_topic_row = word_topic_table_.Get<petuum::SortedVectorMapRow<int32_t> >(index + (other ? FLAGS_num_vocabs : 0), &word_topic_row_acc);
   std::vector<petuum::Entry<int32_t> > word_topic_row_buff;
   word_topic_row_buff.resize(K_);
   word_topic_row.CopyToVector(&word_topic_row_buff);
@@ -381,7 +415,7 @@ void FastDocSamplerVirtual::pullRow(int32_t index, std::map<int32_t,int16_t> * c
     newRowStream << iter->first << ":" << iter->second << " ";
 
   //check row consistency
-  if(FLAGS_num_table_threads == 1 && FLAGS_num_comm_channels_per_client == 1 && FLAGS_client_id == 0 && thread_id == 0)
+  if(FLAGS_num_table_threads == 1 && FLAGS_num_clients == 1 && FLAGS_client_id == 0 && thread_id == 0)
     CHECK(oldRow == newRow) << "row changes in background, old row: " << oldRowStream.str() << " new row: " << newRowStream.str();
 
   //record topic changes
@@ -394,6 +428,7 @@ void FastDocSamplerVirtual::pullRow(int32_t index, std::map<int32_t,int16_t> * c
       changes->insert(std::pair<int32_t,int16_t>(topic, 0));
     changes->at(topic) -= count;
   }
+
   for( IterType iter = newRow.begin() ; iter != newRow.end() ; ++iter )
   {
     int32_t topic = iter->first;
@@ -408,25 +443,55 @@ void FastDocSamplerVirtual::pullRow(int32_t index, std::map<int32_t,int16_t> * c
   word_topic_vals_[index] = newRow;
 }
 
-
-void FastDocSamplerVirtual::pushMany(std::vector<int32_t> indeces)
+void FastDocSamplerVirtual::pushManyOther(std::vector<int32_t> indeces, bool other)
 {
+/////////////////////
+//std::stringstream str;
+//int size = (int)indeces.size();
+//for(int i=0; i<size;i++)
+//  str << indeces[i] << " ";
+//LOG(INFO) << "pushManyOther: clientId is " << FLAGS_client_id << " threadid is " << thread_id << " other is " << other << " indeces are " << str.str();
+
   int indexSize = (int)indeces.size();
   for(int i=0;i<indexSize;i++)
   {
-    pushRow(indeces[i]);
+    pushRowOther(indeces[i], other);
   }
 }
 
-void FastDocSamplerVirtual::pullMany(std::vector<int32_t> indeces)
+
+void FastDocSamplerVirtual::pushMany(std::vector<int32_t> indeces, bool other)
 {
+/////////////////////
+//std::stringstream str;
+//int size = (int)indeces.size();
+//for(int i=0; i<size;i++)
+//  str << indeces[i] << " ";
+//LOG(INFO) << "pushMany: clientId is " << FLAGS_client_id << " threadid is " << thread_id << " other is " << other << " indeces are " << str.str();
+
+  int indexSize = (int)indeces.size();
+  for(int i=0;i<indexSize;i++)
+  {
+    pushRow(indeces[i], other);
+  }
+}
+
+void FastDocSamplerVirtual::pullMany(std::vector<int32_t> indeces, bool other)
+{
+/////////////////////
+//std::stringstream str;
+//int size = (int)indeces.size();
+//for(int i=0; i<size;i++)
+//  str << indeces[i] << " ";
+//LOG(INFO) << "pullMany: clientId is " << FLAGS_client_id << " threadid is " << thread_id << " other is " << other << " indeces are " << str.str();
+
   int indexSize = (int)indeces.size();
   std::map<int32_t,int16_t> changes;
   for(int i=0;i<indexSize;i++)
   {
-    pullRow(indeces[i], &changes);
+    pullRow(indeces[i], other, &changes);
   }
-  
+
   //summary row
   typedef std::map<int32_t,int16_t>::iterator IterType;
   for( IterType iter = changes.begin() ; iter != changes.end() ; ++iter )
@@ -449,6 +514,7 @@ void FastDocSamplerVirtual::push(RowUpdateItem item)
 {
   std::vector<int32_t> updateSchedule;
   int currentRow = item.first;
+  bool other = false;
   if(!FLAGS_is_local_sync)
   {
     for (int i = 0; i < item.numRows; ++i) 
@@ -471,28 +537,37 @@ void FastDocSamplerVirtual::push(RowUpdateItem item)
   }
   else
   {
-    CHECK(false) << "not implemented";
-    /*for (int i = 0; i < totalRows; i++) 
-    {
-        pushRow(i, ((FLAGS_client_id % 2 == 1) ? true : false ));
-    }
-    
+    std::vector<int32_t> updateScheduleOther;
+    bool otherOther = false;
+    if(FLAGS_client_id % 2 == 1)
+      other = true;
+    else
+      otherOther = true;
+
     for (int i = 0; i < item.numRows; ++i) 
     {
-      if(currentRow == totalRows)
+      if(currentRow == V_)
         currentRow = 0;
-      pushOther(currentRow, ((FLAGS_client_id % 2 == 0) ? true : false ));
+      updateScheduleOther.push_back(currentRow);
       currentRow++;
-    }*/
+    }
+
+    for(int i=0; i<V_;i++)
+    {
+      updateSchedule.push_back(i);
+    }
+
+    pushManyOther(updateScheduleOther, otherOther);
   }
   
-  pushMany(updateSchedule);
+  pushMany(updateSchedule, other);
 }
 
 void FastDocSamplerVirtual::pull(RowUpdateItem item)
 {
   std::vector<int32_t> updateSchedule;
   int currentRow = item.first;
+  bool other = false;
   if(!FLAGS_is_local_sync)
   {
     for (int i = 0; i < item.numRows; ++i) 
@@ -515,22 +590,13 @@ void FastDocSamplerVirtual::pull(RowUpdateItem item)
   }
   else
   {
-    CHECK(false) << "not implemented";
-    /*for (int i = 0; i < totalRows; i++) 
-    {
-        pushRow(i, ((FLAGS_client_id % 2 == 1) ? true : false ));
-    }
-    
-    for (int i = 0; i < item.numRows; ++i) 
-    {
-      if(currentRow == totalRows)
-        currentRow = 0;
-      pushOther(currentRow, ((FLAGS_client_id % 2 == 0) ? true : false ));
-      currentRow++;
-    }*/
+    if(FLAGS_client_id % 2 == 1)
+      other = true;
+    for(int i=0;i<V_;i++)
+      updateSchedule.push_back(i);
   }
   
-  pullMany(updateSchedule);
+  pullMany(updateSchedule, other);
 }
 
 

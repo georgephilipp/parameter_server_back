@@ -69,6 +69,7 @@ private:  // private members.
   std::vector<int32_t> summary_vals_;
   std::vector<std::map<int32_t,int16_t> > word_topic_vals_;
   std::vector<std::map<int32_t,int16_t> > word_topic_delta_;
+  std::vector<std::map<int32_t,int16_t> > word_topic_delta_other_;
   std::vector<real_t> s_vector_;
   real_t s_total_;
 public:
@@ -83,11 +84,12 @@ public:
   std::vector<int32_t> get_summary_vals();
 
 private:
-  void pullRow(int32_t index, std::map<int32_t,int16_t> * changes);
-  void pushRow(int32_t index);
-  void pullMany(std::vector<int32_t> indeces);
-  void pushMany(std::vector<int32_t> indeces);
-
+  void pullRow(int32_t index, bool other, std::map<int32_t,int16_t> * changes);
+  void pushRow(int32_t index, bool other);
+  void pushRowOther(int32_t index, bool other);
+  void pullMany(std::vector<int32_t> indeces, bool other);
+  void pushMany(std::vector<int32_t> indeces, bool other);
+  void pushManyOther(std::vector<int32_t> indeces, bool other);
 };
 
 }  // namespace lda

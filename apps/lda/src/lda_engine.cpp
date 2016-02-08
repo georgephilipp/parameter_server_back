@@ -83,6 +83,8 @@ void LDAEngine::Start() {
     for (WordOccurrenceIterator it(&(*doc_iter)); !it.End(); it.Next()) {
       local_vocabs.insert(it.Word());
       word_topic_updates[it.Word()].Update(it.Topic(), 1);
+      if(FLAGS_is_local_sync)
+        word_topic_updates[it.Word() + FLAGS_num_vocabs].Update(it.Topic(), 1);
       summary_updates.Update(it.Topic(), 1);
     }
     doc_iter = corpus_.GetOneDoc();
@@ -105,6 +107,7 @@ void LDAEngine::Start() {
 
   int num_clients = context.get_int32("num_clients");
   int max_vocab_id = context.get_int32("max_vocab_id");
+  int num_vocabs = context.get_int32("num_vocabs");
   // How many vocabs a thread is in charged of for computing LLH.
   int num_vocabs_per_thread = max_vocab_id / (num_clients * num_threads_);
   // Figure out the range of vocabs this thread works on for LLH.
@@ -121,13 +124,17 @@ void LDAEngine::Start() {
     }
     if(FLAGS_virtual_staleness != -1 && thread_id == 0)
     {
-      for(int i=0;i<max_vocab_id;i++)
+      for(int i=0;i<num_vocabs;i++)
         local_vocabs_.insert(i);
       CHECK((int)local_vocabs_.size() == FLAGS_num_vocabs) << "did not add everything to local vocabs";
+      if(FLAGS_is_local_sync)
+      {
+        for(int i=0;i<num_vocabs;i++)
+          local_vocabs_.insert(i + num_vocabs);
+        CHECK((int)local_vocabs_.size() == 2 * FLAGS_num_vocabs) << "did not add everything to local vocabs";
+      }
     }
   }
-
-
 
   STATS_APP_INIT_END();
 
@@ -149,7 +156,6 @@ void LDAEngine::Start() {
   }
 
   petuum::PSTableGroup::GlobalBarrier();
-
   process_barrier_->wait();
 
   if (thread_id == 0)
@@ -163,7 +169,6 @@ void LDAEngine::Start() {
   int32_t num_iters_per_work_unit = context.get_int32("num_iters_per_work_unit");
 
   int num_docs = corpus_.GetNumDocs();    // # of docs in this machine.
-
   std::vector<int32_t> workload; 
   if(FLAGS_virtual_staleness != -1)
   {
@@ -183,7 +188,7 @@ void LDAEngine::Start() {
   int workloadSize = (int)workload.size();
 
   //check the cache initialization
-  if(FLAGS_virtual_staleness != -1 && FLAGS_num_table_threads == 1 && FLAGS_num_comm_channels_per_client == 1 && client_id == 0 && thread_id == 0)
+  if(FLAGS_virtual_staleness != -1 && FLAGS_num_table_threads == 1 && FLAGS_num_clients == 0 && FLAGS_num_comm_channels_per_client == 1 && client_id == 0 && thread_id == 0)
   {
     std::vector<std::map<int32_t,int16_t> > wordTopicTest(FLAGS_num_vocabs);
     std::vector<int32_t> wordTopicTestSummary(FLAGS_num_topics, 0);
@@ -367,7 +372,7 @@ void LDAEngine::Start() {
       process_barrier_->wait();
 
       //check the cache state
-      if(FLAGS_virtual_staleness != -1 && FLAGS_num_table_threads == 1 && FLAGS_num_comm_channels_per_client == 1 && client_id == 0 && thread_id == 0)
+      if(FLAGS_virtual_staleness != -1 && FLAGS_num_table_threads == 1 && FLAGS_num_clients == 0 && FLAGS_num_comm_channels_per_client == 1 && client_id == 0 && thread_id == 0)
       {
         std::vector<std::map<int32_t,int16_t> > wordTopicTest(FLAGS_num_vocabs);
         std::vector<int32_t> wordTopicTestSummary(FLAGS_num_topics, 0);
