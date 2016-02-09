@@ -21,22 +21,24 @@
 
 namespace lda {
 
-LDAEngine::LDAEngine(int seed) :
-  corpus_(seed),
+LDAEngine::LDAEngine(int32_t initSeed, int32_t sampleSeed) :
+  corpus_(initSeed),
   thread_counter_(0)  {
   Context& context = Context::get_instance();
   num_threads_ = context.get_int32("num_table_threads");
   compute_ll_interval_ = context.get_int32("compute_ll_interval");
   process_barrier_.reset(new boost::barrier(num_threads_));
+  sample_seed_ = sampleSeed;
 }
 
-LDAEngine::LDAEngine(time_t seed) :
-  corpus_(seed),
+LDAEngine::LDAEngine(time_t initSeed, int32_t sampleSeed) :
+  corpus_(initSeed),
   thread_counter_(0)  {
   Context& context = Context::get_instance();
   num_threads_ = context.get_int32("num_table_threads");
   compute_ll_interval_ = context.get_int32("compute_ll_interval");
   process_barrier_.reset(new boost::barrier(num_threads_));
+  sample_seed_ = sampleSeed;
 }
 
 void LDAEngine::Start() {
@@ -48,7 +50,7 @@ void LDAEngine::Start() {
     lda_stats_.reset(new LDAStats);
   }
   FastDocSampler sampler;
-  FastDocSamplerVirtual virtualSampler;
+  FastDocSamplerVirtual virtualSampler(sample_seed_);
   lda_stats_->virtualSampler = &virtualSampler;
   virtualSampler.thread_id = thread_id;
 

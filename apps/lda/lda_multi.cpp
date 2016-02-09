@@ -34,6 +34,7 @@ DEFINE_int32(compute_ll_interval, 1, "Copmute log likelihood over local dataset 
 DEFINE_int32(num_iters_per_work_unit, 1, "number of iterations per work unit");
 DEFINE_int32(num_clocks_per_work_unit, 1, "number of clocks per work unit");
 DEFINE_double(error_threshold, 0, "error_threshold");
+DEFINE_int32(seed, 0, "random seed for sampling topics. It is not used for initialization");
 
 // System parms
 DEFINE_uint64(word_topic_table_process_cache_capacity, 100000, "Word topic table process cache capacity");
@@ -506,6 +507,7 @@ public:
 	int32_t num_work_units;
 	int32_t compute_ll_interval;
 	double error_threshold;
+	int32_t seed;
 
     ParmStruct()
     {
@@ -521,6 +523,7 @@ public:
         compute_ll_interval = FLAGS_compute_ll_interval;
 	output_path = FLAGS_output_path;
 	error_threshold = FLAGS_error_threshold;
+	seed = FLAGS_seed;
     }      
         
     void set()
@@ -536,6 +539,7 @@ public:
         FLAGS_num_work_units = num_work_units;
         FLAGS_compute_ll_interval = compute_ll_interval;
 	FLAGS_error_threshold = error_threshold;
+	FLAGS_seed = seed;
 
         std::stringstream outSuffix;
         
@@ -550,6 +554,7 @@ public:
         outSuffix << ".WU" << num_work_units;
         outSuffix << ".LL" << compute_ll_interval;
 	outSuffix << ".ET" << error_threshold;
+	outSuffix << ".SD" << seed;
 
 	FLAGS_output_path = output_path + outSuffix.str();
     }
@@ -600,6 +605,10 @@ public:
 	{
 		error_threshold = std::stod(argval);
 	}
+	else if(argname == "seed")
+	{
+		seed = std::stoi(argval);
+	}
 	else
 	{
 		CHECK(false) << "unknown parm " << argname;
@@ -626,6 +635,7 @@ public:
 		res.push_back("num_work_units");
 		res.push_back("compute_ll_interval");
 		res.push_back("error_threshold");
+		res.push_back("seed");
 		return res;
 	}
 
@@ -643,6 +653,7 @@ public:
 		res.push_back(printInt(num_work_units));
 		res.push_back(printInt(compute_ll_interval));
 		res.push_back(printDouble(error_threshold));
+		res.push_back(printInt(seed));
 		return res;
 	}
 
@@ -687,6 +698,7 @@ void run()
 "compute_ll_interval=" + printInt(FLAGS_compute_ll_interval) + "\n"
 "num_clocks_per_work_unit=" + printInt(FLAGS_num_clocks_per_work_unit) + "\n"
 "num_iters_per_work_unit=" + printInt(FLAGS_num_iters_per_work_unit) + "\n"
+"seed=" + printInt(FLAGS_seed) + "\n"
 "\n"
 "# changing system parms\n"
 "table_staleness=" + printInt(FLAGS_table_staleness) + "\n"
@@ -817,6 +829,7 @@ void run()
 "    --max_vocab_id $max_vocab_id \\\n"
 "    --num_clocks_per_work_unit $num_clocks_per_work_unit \\\n"
 "    --num_iters_per_work_unit $num_iters_per_work_unit \\\n"
+"    --seed $seed \\\n"
 "    --word_topic_table_process_cache_capacity $word_topic_table_process_cache_capacity \\\n"
 "    --num_work_units $num_work_units \\\n"
 "    --compute_ll_interval=$compute_ll_interval \\\n"

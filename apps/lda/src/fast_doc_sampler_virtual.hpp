@@ -27,7 +27,7 @@ typedef double real_t;
 // FastDocSampler does not store any documents.
 class FastDocSamplerVirtual {
 public:
-  FastDocSamplerVirtual();
+  FastDocSamplerVirtual(int32_t seed);
   ~FastDocSamplerVirtual();
 
   void SampleOneDoc(DocumentWordTopics* doc);

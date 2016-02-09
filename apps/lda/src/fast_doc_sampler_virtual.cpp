@@ -17,8 +17,8 @@
 
 namespace lda {
 
-FastDocSamplerVirtual::FastDocSamplerVirtual() :
-    rng_engine_(0),
+FastDocSamplerVirtual::FastDocSamplerVirtual(int32_t seed) :
+    rng_engine_(seed),
     uniform_zero_one_dist_(0, 1),
     zero_one_rng_(new rng_t(rng_engine_, uniform_zero_one_dist_)) {
   Context& context = Context::get_instance();

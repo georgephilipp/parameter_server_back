@@ -25,9 +25,9 @@ namespace lda {
 // spawning threads, to recording execution time and loglikelihood.
 class LDAEngine {
 public:
-  LDAEngine(int seed);
+  LDAEngine(int32_t initSeed, int32_t sampleSeed);
 
-  LDAEngine(time_t seed);
+  LDAEngine(time_t initSeed, int32_t sampleSeed);
 
   void ReadData(const std::string& doc_file);
 
@@ -59,6 +59,8 @@ private:  // private data
   std::unique_ptr<boost::barrier> process_barrier_;
 
   Corpus corpus_;
+
+  int32_t sample_seed_;
 
   std::atomic<int32_t> thread_counter_;
 

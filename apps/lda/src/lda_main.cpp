@@ -35,6 +35,7 @@ DEFINE_int32(num_work_units, 1, "Number of work units");
 DEFINE_int32(compute_ll_interval, 1, "Compute log likelihood over local dataset on every N iterations");
 DEFINE_int32(num_iters_per_work_unit, 1, "number of iterations per work unit");
 DEFINE_int32(num_clocks_per_work_unit, 1, "number of clocks per work unit");
+DEFINE_int32(seed, 0, "random seed for sampling topics. It is not used for initialization");
 
 // System Parameters
 DEFINE_uint64(word_topic_table_process_cache_capacity, 100000, "Word topic table process cache capacity");
@@ -91,6 +92,7 @@ int main(int argc, char *argv[]) {
     LOG(INFO) << "compute_ll_interval " << FLAGS_compute_ll_interval;
     LOG(INFO) << "num_iters_per_work_unit " << FLAGS_num_iters_per_work_unit;
     LOG(INFO) << "num_clocks_per_work_unit " << FLAGS_num_clocks_per_work_unit;
+    LOG(INFO) << "seed " << FLAGS_seed;
     LOG(INFO) << "word_topic_table_process_cache_capacity " << FLAGS_word_topic_table_process_cache_capacity;
     LOG(INFO) << "output_file_prefix " << FLAGS_output_file_prefix;
     LOG(INFO) << "stats_path " << FLAGS_stats_path;
@@ -138,9 +140,9 @@ int main(int argc, char *argv[]) {
 
   lda::LDAEngine* lda_engine;
   if(FLAGS_virtual_staleness != -1)
-    lda_engine = new lda::LDAEngine(0);
+    lda_engine = new lda::LDAEngine(0, FLAGS_seed);
   else
-    lda_engine = new lda::LDAEngine(time(NULL));
+    lda_engine = new lda::LDAEngine(time(NULL), FLAGS_seed);
   LOG(INFO) << "Loading data";
   STATS_APP_LOAD_DATA_BEGIN();
   lda_engine->ReadData(FLAGS_doc_file);
