@@ -33,7 +33,7 @@ DEFINE_int32(num_work_units, 1, "Number of work units");
 DEFINE_int32(compute_ll_interval, 1, "Copmute log likelihood over local dataset on every N iterations");
 DEFINE_int32(num_iters_per_work_unit, 1, "number of iterations per work unit");
 DEFINE_int32(num_clocks_per_work_unit, 1, "number of clocks per work unit");
-DEFINE_double(error_threshold, 0, "error_threshold");
+DEFINE_string(error_threshold, "0", "error_threshold");
 DEFINE_int32(seed, 0, "random seed for sampling topics. It is not used for initialization");
 
 // System parms
@@ -73,7 +73,17 @@ std::string printDouble(double val)
 	return stream.str();
 }
 
-
+std::vector<std::string> split(std::string input, char delim)
+{
+    std::vector<std::string> res;
+    std::stringstream stream(input);
+    std::string item;
+    while (std::getline(stream, item, delim)) 
+    {
+        res.push_back(item);
+    }
+    return res;
+}
 
 std::vector<std::string> rls(std::string path)
 {
@@ -506,7 +516,7 @@ public:
         bool is_local_sync;
 	int32_t num_work_units;
 	int32_t compute_ll_interval;
-	double error_threshold;
+	std::string error_threshold;
 	int32_t seed;
 
     ParmStruct()
@@ -603,7 +613,7 @@ public:
 	}
 	else if(argname == "error_threshold")
 	{
-		error_threshold = std::stod(argval);
+		error_threshold = argval;
 	}
 	else if(argname == "seed")
 	{
@@ -652,7 +662,7 @@ public:
                 res.push_back(printBool(is_local_sync));
 		res.push_back(printInt(num_work_units));
 		res.push_back(printInt(compute_ll_interval));
-		res.push_back(printDouble(error_threshold));
+		res.push_back(error_threshold);
 		res.push_back(printInt(seed));
 		return res;
 	}
@@ -908,23 +918,29 @@ int main(int argc, char *argv[])
 		ps.set();
 		run();
 		std::vector<std::vector<std::string> > resultRaw = rrs(FLAGS_output_path + "/output.llh", ' ');
-		int keyLineIndex = getKeyLine(resultRaw, FLAGS_error_threshold);
-		if(keyLineIndex == resultRaw.size())
-			keyLineIndex--;
-		std::vector<std::string> resRow = ps.getRow();
-		for(int j=0;j<3;j++)
-			resRow.push_back(resultRaw[keyLineIndex][j]);
-		LOG(INFO) << "printing results with size : " << resRow.size();
-		wrs<std::string>(ps.get_output_path(), {{}, resRow}, " ", std::ios::app);
-		std::vector<std::vector<std::string> > resultLong = {outHeader};
+		int resultSize = (int)resultRaw.size();
+		std::vector<std::vector<std::string> > result = {{}};
+		std::vector<std::string> errorThresholds = split(FLAGS_error_threshold, ':');
+		int numThresholds = (int)errorThresholds.size();
+		for(int j=0;j<numThresholds;j++)
+		{
+			int keyLineIndex = getKeyLine(resultRaw, std::stod(errorThresholds[j]));
+			if(keyLineIndex == resultSize)
+				keyLineIndex = resultSize - 1;
+			std::vector<std::string> resRow = ps.getRow();
+			for(int j=0;j<3;j++)
+				resRow.push_back(resultRaw[keyLineIndex][j]);
+			result.push_back(resRow);
+		}		
+		wrs<std::string>(ps.get_output_path(), result, " ", std::ios::app);
+		std::vector<std::vector<std::string> > resultLong = {{}, outHeader};
 		for(int k=0;k<(int)resultRaw.size();k++)
 		{
-			resRow = ps.getRow();
+			std::vector<std::string> resRow = ps.getRow();
 			for(int j=0;j<3;j++)
 				resRow.push_back(resultRaw[k][j]);
 			resultLong.push_back(resRow);
 		}
-		LOG(INFO) << "printing verbose results with first row size " << resultLong.size();
 		wrs<std::string>(ps.get_output_path() + "_verbose", resultLong, " ", std::ios::app);
 	}
 	LOG(INFO) << "DONE";
