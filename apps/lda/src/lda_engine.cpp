@@ -62,10 +62,12 @@ void LDAEngine::Start() {
 
   int32_t summary_table_id = context.get_int32("summary_table_id");
   int32_t word_topic_table_id = context.get_int32("word_topic_table_id");
-  petuum::Table<int> summary_table =
-    petuum::PSTableGroup::GetTableOrDie<int>(summary_table_id);
-  petuum::Table<int> word_topic_table =
-    petuum::PSTableGroup::GetTableOrDie<int>(word_topic_table_id);
+  int32_t summary_table_global_id = context.get_int32("summary_table_global_id");
+  int32_t word_topic_table_global_id = context.get_int32("word_topic_table_global_id");
+  petuum::Table<int> summary_table = petuum::PSTableGroup::GetTableOrDie<int>(summary_table_id);
+  petuum::Table<int> word_topic_table = petuum::PSTableGroup::GetTableOrDie<int>(word_topic_table_id);
+  petuum::Table<int> summary_table_global = petuum::PSTableGroup::GetTableOrDie<int>(summary_table_global_id);
+  petuum::Table<int> word_topic_table_global = petuum::PSTableGroup::GetTableOrDie<int>(word_topic_table_global_id);
 
   if (thread_id == 0)
     corpus_.RestartWorkUnit(1);
@@ -76,7 +78,10 @@ void LDAEngine::Start() {
   // contentions.
   STATS_APP_INIT_BEGIN();
   petuum::UpdateBatch<int> summary_updates;
+  petuum::UpdateBatch<int> summary_updates_global;
   std::unordered_map<int, petuum::UpdateBatch<int> > word_topic_updates;
+  std::unordered_map<int, petuum::UpdateBatch<int> > word_topic_updates_global;
+  std::unordered_map<int, petuum::UpdateBatch<int> > word_topic_updates_local_sync;
   std::set<int32_t> local_vocabs;
 
   auto doc_iter = corpus_.GetOneDoc();
@@ -85,19 +90,40 @@ void LDAEngine::Start() {
     for (WordOccurrenceIterator it(&(*doc_iter)); !it.End(); it.Next()) {
       local_vocabs.insert(it.Word());
       word_topic_updates[it.Word()].Update(it.Topic(), 1);
+      if(FLAGS_safe_llh)
+        word_topic_updates_global[it.Word()].Update(it.Topic(), 1);
       if(FLAGS_is_local_sync)
-        word_topic_updates[it.Word() + FLAGS_num_vocabs].Update(it.Topic(), 1);
+        word_topic_updates_local_sync[it.Word() + FLAGS_num_vocabs].Update(it.Topic(), 1);
       summary_updates.Update(it.Topic(), 1);
+      if(FLAGS_safe_llh)
+        summary_updates_global.Update(it.Topic(), 1);
     }
     doc_iter = corpus_.GetOneDoc();
   }
 
   summary_table.BatchInc(0, summary_updates);
+  if(FLAGS_safe_llh)
+    summary_table_global.BatchInc(0, summary_updates);
 
   for (auto it = word_topic_updates.begin();
       it != word_topic_updates.end(); ++it) {
     word_topic_table.BatchInc(it->first, it->second);
   }
+  if(FLAGS_safe_llh)
+  {
+    for (auto it = word_topic_updates_global.begin();
+        it != word_topic_updates_global.end(); ++it) {
+      word_topic_table_global.BatchInc(it->first, it->second);
+    }
+  }
+  if(FLAGS_is_local_sync)
+  {
+    for (auto it = word_topic_updates_local_sync.begin();
+        it != word_topic_updates_local_sync.end(); ++it) {
+      word_topic_table.BatchInc(it->first, it->second);
+    }
+  }
+
   petuum::PSTableGroup::GlobalBarrier();
 
   {
@@ -154,6 +180,16 @@ void LDAEngine::Start() {
     }
     LOG(INFO) << "max_workd_id = " << max_word_id;
     word_topic_table.WaitPendingAsyncGet();
+    if(FLAGS_safe_llh)
+    {
+      for (int32_t i = 0; i<FLAGS_num_vocabs; i++) 
+      {
+        word_topic_table_global.GetAsyncForced(i);
+      }
+      word_topic_table_global.WaitPendingAsyncGet();
+      summary_table_global.GetAsyncForced(0);
+      summary_table_global.WaitPendingAsyncGet();
+    }
     STATS_APP_BOOTSTRAP_END();
   }
 
@@ -190,7 +226,7 @@ void LDAEngine::Start() {
   int workloadSize = (int)workload.size();
 
   //check the cache initialization
-  if(FLAGS_virtual_staleness != -1 && FLAGS_num_table_threads == 1 && FLAGS_num_clients == 0 && FLAGS_num_comm_channels_per_client == 1 && client_id == 0 && thread_id == 0)
+  if(FLAGS_virtual_staleness != -1 && FLAGS_num_table_threads == 1 && FLAGS_num_clients == 1 && client_id == 0 && thread_id == 0)
   {
     std::vector<std::map<int32_t,int16_t> > wordTopicTest(FLAGS_num_vocabs);
     std::vector<int32_t> wordTopicTestSummary(FLAGS_num_topics, 0);
@@ -240,6 +276,64 @@ void LDAEngine::Start() {
       CHECK(wordTopicTest[i] == fetchedRow) << "failed wordTopicTest with fetchedRow " << fetchedRowString.str() << " and test row " << wordTopicTestString.str() << " at vocab " << i;
     }
     LOG(INFO) << "passed first check!";
+  }
+
+  //check global table consistency
+  if(FLAGS_safe_llh)
+  {
+    for(int w=0;w<FLAGS_num_vocabs;w++)
+    {
+      std::map<int32_t,int16_t> row;
+      std::stringstream rowStr;
+      {
+        petuum::RowAccessor word_topic_row_acc;
+        const auto & word_topic_row = word_topic_table.Get<petuum::SortedVectorMapRow<int32_t> >(w, &word_topic_row_acc);
+        std::vector<petuum::Entry<int32_t> > word_topic_row_buff;
+        word_topic_row_buff.resize(FLAGS_num_topics);
+        word_topic_row.CopyToVector(&word_topic_row_buff);
+        for (auto & wt_it : word_topic_row_buff) 
+        {
+          int32_t topic = wt_it.first;
+          int32_t count = wt_it.second;
+          CHECK(count > 0) << "found non-positive word count";
+          row[topic] = (int16_t)count;
+          rowStr << topic << ":" << count << " ";
+        }
+      }
+
+      std::map<int32_t,int16_t> recRow;
+      std::stringstream recRowStr;
+      {
+        petuum::RowAccessor word_topic_row_acc;
+        const auto & word_topic_row = word_topic_table_global.Get<petuum::SortedVectorMapRow<int32_t> >(w, &word_topic_row_acc);
+        std::vector<petuum::Entry<int32_t> > word_topic_row_buff;
+        word_topic_row_buff.resize(FLAGS_num_topics);
+        word_topic_row.CopyToVector(&word_topic_row_buff);
+        for (auto & wt_it : word_topic_row_buff) 
+        {
+          int32_t topic = wt_it.first;
+          int32_t count = wt_it.second;
+          CHECK(count > 0) << "found non-positive word count";
+          recRow[topic] = (int16_t)count;
+          recRowStr << topic << ":" << count << " ";
+        }
+      }
+
+      CHECK(row == recRow) << "global word-topic table is inconsistent after initialization at word " << w << " rowSize is " << row.size() << " recRowSize is " << recRow.size() << " row is " << rowStr.str() << " recRow is " << recRowStr.str();
+    }
+    
+    std::vector<int32_t> summary_row;
+    {
+      petuum::RowAccessor summary_row_acc;
+      const auto& summary_row_raw = summary_table_global.Get<petuum::DenseRow<int32_t> >(0, &summary_row_acc);
+      for (int k = 0; k < FLAGS_num_topics; ++k) {
+        summary_row.push_back(summary_row_raw[k]);
+      }
+    }
+    
+    CHECK(summary_row == virtualSampler.get_summary_vals()) << "global summary table is inconsistent after initialization";
+
+    LOG(INFO) << "completed global table consistency check post initialization";
   }
 
   // ceil to ensure (num_docs_this_work_unit / num_dos_per_clock) does not
@@ -374,7 +468,7 @@ void LDAEngine::Start() {
       process_barrier_->wait();
 
       //check the cache state
-      if(FLAGS_virtual_staleness != -1 && FLAGS_num_table_threads == 1 && FLAGS_num_clients == 0 && FLAGS_num_comm_channels_per_client == 1 && client_id == 0 && thread_id == 0)
+      if(FLAGS_virtual_staleness != -1 && FLAGS_num_table_threads == 1 && FLAGS_num_clients == 1 && client_id == 0 && thread_id == 0)
       {
         std::vector<std::map<int32_t,int16_t> > wordTopicTest(FLAGS_num_vocabs);
         std::vector<int32_t> wordTopicTestSummary(FLAGS_num_topics, 0);
@@ -423,6 +517,68 @@ void LDAEngine::Start() {
           }
           CHECK(wordTopicTest[i] == fetchedRow) << "failed wordTopicTest with fetchedRow " << fetchedRowString.str() << " and test row " << wordTopicTestString.str() << " at vocab " << i;
         }
+      }
+
+      //check global table consistency
+      if(FLAGS_safe_llh && FLAGS_communication_factor == 1)
+      {
+        for(int w=0;w<FLAGS_num_vocabs;w++)
+        {
+          std::map<int32_t,int16_t> row;
+          std::stringstream rowStr;
+          {
+            petuum::RowAccessor word_topic_row_acc;
+            const auto & word_topic_row = word_topic_table.Get<petuum::SortedVectorMapRow<int32_t> >(w, &word_topic_row_acc);
+            std::vector<petuum::Entry<int32_t> > word_topic_row_buff;
+            word_topic_row_buff.resize(FLAGS_num_topics);
+            word_topic_row.CopyToVector(&word_topic_row_buff);
+            for (auto & wt_it : word_topic_row_buff) 
+            {
+              int32_t topic = wt_it.first;
+              int32_t count = wt_it.second;
+              CHECK(count > 0) << "found non-positive word count";
+              row[topic] = (int16_t)count;
+              rowStr << topic << ":" << count << " ";
+            }
+          }
+
+          std::map<int32_t,int16_t> recRow;
+          std::stringstream recRowStr;
+          {
+            petuum::RowAccessor word_topic_row_acc;
+            const auto & word_topic_row = word_topic_table_global.Get<petuum::SortedVectorMapRow<int32_t> >(w, &word_topic_row_acc);
+            std::vector<petuum::Entry<int32_t> > word_topic_row_buff;
+            word_topic_row_buff.resize(FLAGS_num_topics);
+            word_topic_row.CopyToVector(&word_topic_row_buff);
+            for (auto & wt_it : word_topic_row_buff) 
+            {
+              int32_t topic = wt_it.first;
+              int32_t count = wt_it.second;
+              CHECK(count > 0) << "found non-positive word count";
+              recRow[topic] = (int16_t)count;
+              recRowStr << topic << ":" << count << " ";
+            }
+          }
+
+          CHECK(row == recRow) << "global word-topic table is inconsistent after sync at word " << w << " rowSize is " << row.size() << " recRowSize is " << recRow.size() << " row is " << rowStr.str() << " recRow is " << recRowStr.str();
+    
+          std::map<int32_t,int16_t> recRecRow = virtualSampler.get_word_topic_row(w);
+
+          CHECK(row == recRecRow) << "global word-topic table is inconsistent after sync at word " << w << " rowSize is " << row.size() << " recRecRowSize is " << recRecRow.size() << " row is " << rowStr.str();
+        }
+    
+        std::vector<int32_t> summary_row;
+        {
+          petuum::RowAccessor summary_row_acc;
+          const auto& summary_row_raw = summary_table_global.Get<petuum::DenseRow<int32_t> >(0, &summary_row_acc);
+          for (int k = 0; k < FLAGS_num_topics; ++k) {
+            summary_row.push_back(summary_row_raw[k]);
+          }
+        }
+    
+        CHECK(summary_row == virtualSampler.get_summary_vals()) << "global summary table is inconsistent after sync";
+
+        LOG(INFO) << "completed global table consistency check post sync";
       }
 
       STATS_APP_DEFINED_ACCUM_SEC_BEGIN();

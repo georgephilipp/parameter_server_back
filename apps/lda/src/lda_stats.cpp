@@ -48,10 +48,13 @@ LDAStats::LDAStats() {
   // PS tables.
   int32_t summary_table_id = context.get_int32("summary_table_id");
   int32_t word_topic_table_id = context.get_int32("word_topic_table_id");
+  int32_t summary_table_global_id = context.get_int32("summary_table_global_id");
+  int32_t word_topic_table_global_id = context.get_int32("word_topic_table_global_id");
   int32_t llh_table_id = context.get_int32("llh_table_id");
   summary_table_ = petuum::PSTableGroup::GetTableOrDie<int>(summary_table_id);
-  word_topic_table_ = petuum::PSTableGroup::GetTableOrDie<int>(
-      word_topic_table_id);
+  word_topic_table_ = petuum::PSTableGroup::GetTableOrDie<int>(word_topic_table_id);
+  summary_table_global_ = petuum::PSTableGroup::GetTableOrDie<int>(summary_table_global_id);
+  word_topic_table_global_ = petuum::PSTableGroup::GetTableOrDie<int>(word_topic_table_global_id);
   llh_table_ = petuum::PSTableGroup::GetTableOrDie<double>(llh_table_id);
 }
 
@@ -102,7 +105,6 @@ double LDAStats::ComputeOneDocLLH(DocumentWordTopics* doc) {
 
 void LDAStats::ComputeWordLLH(int32_t ith_llh, int word_idx_start,
     int word_idx_end) {
-
   std::vector<petuum::Entry<int32_t> > word_topic_row_buff;
 
   double word_llh = 0.;
@@ -124,11 +126,28 @@ void LDAStats::ComputeWordLLH(int32_t ith_llh, int word_idx_start,
     }
     else
     {
-      std::map<int32_t,int16_t> row = virtualSampler->get_word_topic_row(w);
-      typedef std::map<int32_t,int16_t>::iterator IterType;
-      for(IterType iter = row.begin(); iter != row.end(); ++iter)
+      if(FLAGS_safe_llh)
       {
-        counts.push_back(iter->second);
+        petuum::RowAccessor word_topic_row_acc;
+        const auto& word_topic_row = word_topic_table_global_.Get<petuum::SortedVectorMapRow<int32_t> >(w, &word_topic_row_acc);
+        CHECK(&word_topic_row != 0) << "null pointer read!";
+        word_topic_row.CopyToVector(&word_topic_row_buff);
+        if (word_topic_row_buff.size() > 0) {
+          for (auto & wt_it : word_topic_row_buff) {
+            CHECK(wt_it.second >= 0) << "found summaryval that is negative";
+            counts.push_back(wt_it.second);
+          }
+        }
+      }
+      else
+      {
+        std::map<int32_t,int16_t> row = virtualSampler->get_word_topic_row(w);
+        typedef std::map<int32_t,int16_t>::iterator IterType;
+        for(IterType iter = row.begin(); iter != row.end(); ++iter)
+        {
+          CHECK(iter->second >= 0) << "found summaryval that is negative";
+          counts.push_back(iter->second);
+        }
       }
     }
 
@@ -163,7 +182,20 @@ void LDAStats::ComputeWordLLHSummary(int32_t ith_llh, int iter) {
   }
   else
   {
-    summary_row = virtualSampler->get_summary_vals();
+    if(FLAGS_safe_llh)
+    {
+      petuum::RowAccessor summary_row_acc;
+      const auto& summary_row_raw = summary_table_global_.Get<petuum::DenseRow<int32_t> >(0, &summary_row_acc);
+      for (int k = 0; k < K_; ++k) {
+        summary_row.push_back(summary_row_raw[k]);
+      }
+
+      //check table equivalence
+      if(FLAGS_communication_factor == 1)
+        CHECK(summary_row == virtualSampler->get_summary_vals()) << "global summary table is inconsistent";
+    }
+    else
+      summary_row = virtualSampler->get_summary_vals();
   }
 
   for (int k = 0; k < K_; ++k) {

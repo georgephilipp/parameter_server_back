@@ -52,6 +52,8 @@ private:  // private members.
   // Word topic table of V_ rows, each of which is a [K x 1] dim sparse sorted
   // row.
   petuum::Table<int32_t> word_topic_table_;
+  petuum::Table<int32_t> word_topic_table_global_;
+  petuum::Table<int32_t> summary_table_global_;
 
   // ================== Utilities ====================
   typedef boost::variate_generator<boost::mt19937&,

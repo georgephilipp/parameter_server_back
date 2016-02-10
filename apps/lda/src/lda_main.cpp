@@ -36,6 +36,7 @@ DEFINE_int32(compute_ll_interval, 1, "Compute log likelihood over local dataset 
 DEFINE_int32(num_iters_per_work_unit, 1, "number of iterations per work unit");
 DEFINE_int32(num_clocks_per_work_unit, 1, "number of clocks per work unit");
 DEFINE_int32(seed, 0, "random seed for sampling topics. It is not used for initialization");
+DEFINE_bool(safe_llh, false, "if true, use the correct global model for llh");
 
 // System Parameters
 DEFINE_uint64(word_topic_table_process_cache_capacity, 100000, "Word topic table process cache capacity");
@@ -48,6 +49,8 @@ DEFINE_string(signal_file_path, "", "signal_file_path");
 DEFINE_int32(word_topic_table_id, 1, "ID within Petuum-PS");
 DEFINE_int32(summary_table_id, 2, "ID within Petuum-PS");
 DEFINE_int32(llh_table_id, 3, "ID within Petuum-PS");
+DEFINE_int32(word_topic_table_global_id, 4, "ID within Petuum-PS"); 
+DEFINE_int32(summary_table_global_id, 5, "ID within Petuum-PS"); 
 
 int32_t kSortedVectorMapRowTypeID = 1;
 int32_t kDenseRowIntTypeID = 2;
@@ -76,7 +79,7 @@ int main(int argc, char *argv[]) {
 
   LOG(INFO) << "LDA starts here! dense serialize = " << FLAGS_oplog_dense_serialized;
 
-  if(false)
+  if(true)
   {
     LOG(INFO) << "doc_file " << FLAGS_doc_file;
     LOG(INFO) << "num_vocabs " << FLAGS_num_vocabs;
@@ -93,6 +96,7 @@ int main(int argc, char *argv[]) {
     LOG(INFO) << "num_iters_per_work_unit " << FLAGS_num_iters_per_work_unit;
     LOG(INFO) << "num_clocks_per_work_unit " << FLAGS_num_clocks_per_work_unit;
     LOG(INFO) << "seed " << FLAGS_seed;
+    LOG(INFO) << "safe_llh " << FLAGS_safe_llh;
     LOG(INFO) << "word_topic_table_process_cache_capacity " << FLAGS_word_topic_table_process_cache_capacity;
     LOG(INFO) << "output_file_prefix " << FLAGS_output_file_prefix;
     LOG(INFO) << "stats_path " << FLAGS_stats_path;
@@ -116,11 +120,12 @@ int main(int argc, char *argv[]) {
   CHECK(FLAGS_communication_factor == -1 || FLAGS_num_vocabs == FLAGS_max_vocab_id + 1) << "cannot have empty vocab ids for virtual staleness";
   CHECK(FLAGS_communication_factor == -1 || FLAGS_num_clocks_per_work_unit == 1) << "does not supported fractional iterations with virtual staleness";
   CHECK(FLAGS_communication_factor == -1 || FLAGS_table_staleness == 0) << "cannot have virtual staleness and actual staleness";
+  CHECK(FLAGS_communication_factor != -1 || !FLAGS_safe_llh) << "cannot have safe_llh without virtual staleness";
 
   // Read in data first to get # of vocabs in this partition.
   petuum::TableGroupConfig table_group_config;
   // doc-topic table, summary table, llh table.
-  petuum::InitTableGroupConfig(&table_group_config, 3);
+  petuum::InitTableGroupConfig(&table_group_config, 5);
 
   petuum::PSTableGroup::RegisterRow<petuum::SortedVectorMapRow<int32_t> >
       (kSortedVectorMapRowTypeID);
@@ -151,6 +156,7 @@ int main(int argc, char *argv[]) {
   LOG(INFO) << "Read data done!";
   LOG(INFO) << "LDA starts here! dense serialize = " << FLAGS_oplog_dense_serialized;
 
+  //word-topic table
   petuum::ClientTableConfig wt_table_config;
   petuum::InitTableConfig(&wt_table_config);
   wt_table_config.table_info.row_capacity = FLAGS_num_topics;
@@ -164,6 +170,20 @@ int main(int argc, char *argv[]) {
       FLAGS_word_topic_table_id, wt_table_config)) << "Failed to create word-topic table";
 
   LOG(INFO) << "Created word-topic table";
+
+  //word-topic table global
+  petuum::ClientTableConfig wt_table_config_global;
+  petuum::InitTableConfig(&wt_table_config_global);
+  wt_table_config_global.table_info.row_capacity = FLAGS_num_topics;
+  wt_table_config_global.table_info.dense_row_oplog_capacity = FLAGS_num_topics;
+  wt_table_config_global.process_cache_capacity = FLAGS_max_vocab_id + 1;
+  wt_table_config_global.thread_cache_capacity = 1;
+  wt_table_config_global.oplog_capacity = FLAGS_max_vocab_id + 1;
+  wt_table_config_global.table_info.row_type = kSortedVectorMapRowTypeID;
+  CHECK(petuum::PSTableGroup::CreateTable(
+      FLAGS_word_topic_table_global_id, wt_table_config_global)) << "Failed to create global word-topic table";
+
+  LOG(INFO) << "Created global word-topic table";
 
   // Summary row table (single_row).
   petuum::ClientTableConfig summary_table_config;
@@ -181,6 +201,26 @@ int main(int argc, char *argv[]) {
   CHECK(petuum::PSTableGroup::CreateTable(
       FLAGS_summary_table_id, summary_table_config)) << "Failed to create summary table";
 
+  LOG(INFO) << "Created summary table";
+
+  // Summary row table (single_row) global.
+  petuum::ClientTableConfig summary_table_config_global;
+  petuum::InitTableConfig(&summary_table_config_global);
+  summary_table_config_global.table_info.row_capacity = FLAGS_num_topics;
+  summary_table_config_global.table_info.dense_row_oplog_capacity = FLAGS_num_topics;
+  summary_table_config_global.process_storage_type = petuum::BoundedSparse;
+  summary_table_config_global.oplog_type = petuum::Sparse;
+  summary_table_config_global.process_cache_capacity = 1;
+  summary_table_config_global.thread_cache_capacity = 1;
+  summary_table_config_global.oplog_capacity = 1;
+  summary_table_config_global.table_info.row_type = kDenseRowIntTypeID;
+  summary_table_config_global.client_send_oplog_upper_bound = 1;
+  summary_table_config_global.table_info.server_push_row_upper_bound = 1;
+  CHECK(petuum::PSTableGroup::CreateTable(
+      FLAGS_summary_table_global_id, summary_table_config_global)) << "Failed to create global summary table";
+
+  LOG(INFO) << "Created global summary table";
+
   // Log-likelihood (llh) table. Single column; each column is a complete-llh.
   petuum::ClientTableConfig llh_table_config;
   petuum::InitTableConfig(&llh_table_config);
@@ -197,6 +237,8 @@ int main(int argc, char *argv[]) {
   llh_table_config.table_info.server_push_row_upper_bound = 1;
   CHECK(petuum::PSTableGroup::CreateTable(
       FLAGS_llh_table_id, llh_table_config)) << "Failed to create summary table";
+
+  LOG(INFO) << "Created llh table";
 
   petuum::PSTableGroup::CreateTableDone();
 

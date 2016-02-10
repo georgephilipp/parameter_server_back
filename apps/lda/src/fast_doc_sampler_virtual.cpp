@@ -33,6 +33,10 @@ FastDocSamplerVirtual::FastDocSamplerVirtual(int32_t seed) :
   // PS tables.
   int32_t word_topic_table_id = context.get_int32("word_topic_table_id");
   word_topic_table_ = petuum::PSTableGroup::GetTableOrDie<int>(word_topic_table_id);
+  int32_t word_topic_table_global_id = context.get_int32("word_topic_table_global_id");
+  word_topic_table_global_ = petuum::PSTableGroup::GetTableOrDie<int>(word_topic_table_global_id);
+  int32_t summary_table_global_id = context.get_int32("summary_table_global_id");
+  summary_table_global_ = petuum::PSTableGroup::GetTableOrDie<int>(summary_table_global_id);
 }
 
 FastDocSamplerVirtual::~FastDocSamplerVirtual() {}
@@ -291,6 +295,17 @@ void FastDocSamplerVirtual::SampleOneDoc(DocumentWordTopics* doc)
     // table and summary row.
     if (oldTopic != newTopic) {
       it.SetTopic(newTopic);
+      if(FLAGS_safe_llh)
+      {
+        petuum::UpdateBatch<int32_t> word_topic_updates(2);
+        word_topic_updates.UpdateSet(0, oldTopic, -1);
+        word_topic_updates.UpdateSet(1, newTopic, 1);
+        word_topic_table_global_.BatchInc(it.Word(), word_topic_updates);
+        petuum::UpdateBatch<int32_t> word_topic_updates2(2);
+        word_topic_updates2.UpdateSet(0, oldTopic, -1);
+        word_topic_updates2.UpdateSet(1, newTopic, 1);
+        summary_table_global_.BatchInc(0, word_topic_updates2);
+      }
     }
   }
 }

@@ -35,6 +35,7 @@ DEFINE_int32(num_iters_per_work_unit, 1, "number of iterations per work unit");
 DEFINE_int32(num_clocks_per_work_unit, 1, "number of clocks per work unit");
 DEFINE_string(error_threshold, "0", "error_threshold");
 DEFINE_int32(seed, 0, "random seed for sampling topics. It is not used for initialization");
+DEFINE_bool(safe_llh, false, "if true, use the correct global model for llh");
 
 // System parms
 DEFINE_uint64(word_topic_table_process_cache_capacity, 100000, "Word topic table process cache capacity");
@@ -518,6 +519,7 @@ public:
 	int32_t compute_ll_interval;
 	std::string error_threshold;
 	int32_t seed;
+	bool safe_llh;
 
     ParmStruct()
     {
@@ -534,6 +536,7 @@ public:
 	output_path = FLAGS_output_path;
 	error_threshold = FLAGS_error_threshold;
 	seed = FLAGS_seed;
+	safe_llh = FLAGS_safe_llh;
     }      
         
     void set()
@@ -550,6 +553,7 @@ public:
         FLAGS_compute_ll_interval = compute_ll_interval;
 	FLAGS_error_threshold = error_threshold;
 	FLAGS_seed = seed;
+	FLAGS_safe_llh = safe_llh;
 
         std::stringstream outSuffix;
         
@@ -565,6 +569,7 @@ public:
         outSuffix << ".LL" << compute_ll_interval;
 	outSuffix << ".ET" << error_threshold;
 	outSuffix << ".SD" << seed;
+	outSuffix << ".SL" << safe_llh;
 
 	FLAGS_output_path = output_path + outSuffix.str();
     }
@@ -619,6 +624,10 @@ public:
 	{
 		seed = std::stoi(argval);
 	}
+	else if(argname == "safe_llh")
+	{
+		safe_llh = (argval == "1");
+	}
 	else
 	{
 		CHECK(false) << "unknown parm " << argname;
@@ -646,6 +655,7 @@ public:
 		res.push_back("compute_ll_interval");
 		res.push_back("error_threshold");
 		res.push_back("seed");
+		res.push_back("safe_llh");
 		return res;
 	}
 
@@ -664,6 +674,7 @@ public:
 		res.push_back(printInt(compute_ll_interval));
 		res.push_back(error_threshold);
 		res.push_back(printInt(seed));
+		res.push_back(printBool(safe_llh));
 		return res;
 	}
 
@@ -709,6 +720,7 @@ void run()
 "num_clocks_per_work_unit=" + printInt(FLAGS_num_clocks_per_work_unit) + "\n"
 "num_iters_per_work_unit=" + printInt(FLAGS_num_iters_per_work_unit) + "\n"
 "seed=" + printInt(FLAGS_seed) + "\n"
+"safe_llh=" + printBool(FLAGS_safe_llh) + "\n"
 "\n"
 "# changing system parms\n"
 "table_staleness=" + printInt(FLAGS_table_staleness) + "\n"
@@ -840,6 +852,7 @@ void run()
 "    --num_clocks_per_work_unit $num_clocks_per_work_unit \\\n"
 "    --num_iters_per_work_unit $num_iters_per_work_unit \\\n"
 "    --seed $seed \\\n"
+"    --safe_llh=$safe_llh \\\n"
 "    --word_topic_table_process_cache_capacity $word_topic_table_process_cache_capacity \\\n"
 "    --num_work_units $num_work_units \\\n"
 "    --compute_ll_interval=$compute_ll_interval \\\n"
@@ -896,7 +909,6 @@ int main(int argc, char *argv[])
 {
 	google::ParseCommandLineFlags(&argc, &argv, true);
 	google::InitGoogleLogging(argv[0]);
-	CHECK(!FLAGS_is_local_sync) << "Not yet supported!";
 	std::vector<std::vector<std::string> > parms = rrs(FLAGS_parm_file, ' ');
 	int numParmRows = (int)parms.size();
 	std::vector<std::string> header = parms[0];

@@ -12,3 +12,4 @@ DECLARE_int32(num_vocabs);
 DECLARE_int32(num_clocks_per_work_unit);
 DECLARE_int32(num_topics);
 DECLARE_int32(num_vocabs);
+DECLARE_bool(safe_llh);

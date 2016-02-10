@@ -8,6 +8,7 @@
 #include "document_word_topics.hpp"
 #include "fast_doc_sampler_virtual.hpp"
 #include <string>
+#include "common.hpp"
 
 namespace lda {
 
@@ -90,10 +91,12 @@ private:
   // A table containing just one summary row of [K x 1] dimension. The k-th
   // entry in the table is the # of tokens assigned to topic k.
   petuum::Table<int32_t> summary_table_;
+  petuum::Table<int32_t> summary_table_global_;
 
   // Word topic table of V_ rows, each of which is a [K x 1] dim sparse sorted
   // row.
   petuum::Table<int32_t> word_topic_table_;
+  petuum::Table<int32_t> word_topic_table_global_;
 
   // Log-likelihood table. Each row (say row i) has only one column storing
   // the complete log-likelihood of the i-th likelihood computation.
