@@ -186,7 +186,7 @@ void LRSGDSolver::pushOther(int index, bool isOffset)
 } 
 
 //inc and get: from and to thread cache
-void LRSGDSolver::push(RowUpdateItem item) {
+void LRSGDSolver::push(RowUpdateItem item, int epoch) {
   // Write delta's to PS table.
   int num_full_rows = feature_dim_ / w_table_num_cols_;
   bool hasPartialRow = (feature_dim_ % w_table_num_cols_ != 0);
@@ -219,6 +219,8 @@ void LRSGDSolver::push(RowUpdateItem item) {
   {
     for (int i = 0; i < totalRows; i++) 
     {
+        if((i+epoch) % 2 == 1)
+          continue;
         pushRow(i, ((FLAGS_client_id % 2 == 1) ? true : false ));
     }
     
@@ -269,7 +271,7 @@ void LRSGDSolver::pullRow(int index, bool isOffset)
 }  
 
 
-void LRSGDSolver::pull(RowUpdateItem item)
+void LRSGDSolver::pull(RowUpdateItem item, int epoch)
 {
   int num_full_rows = feature_dim_ / w_table_num_cols_;
   bool hasPartialRow = (feature_dim_ - w_table_num_cols_ * num_full_rows != 0);
@@ -305,6 +307,8 @@ void LRSGDSolver::pull(RowUpdateItem item)
   {
     for (int i = 0; i < totalRows; i++) 
     {
+        if((i+epoch) % 2 == 1)
+          continue; 
         pullRow(i, ((FLAGS_client_id % 2 == 1) ? true : false ));
     }
   }

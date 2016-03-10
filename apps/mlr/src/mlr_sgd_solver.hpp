@@ -48,13 +48,13 @@ public:
     const;
 
   //Write pending updates to PS for a specified set of rows
-  void push(RowUpdateItem item);
+  void push(RowUpdateItem item, int epoch);
 
   // Write pending updates to PS
   void push();
 
   //Read fresh values from PS for a specified set of rows
-  void pull(RowUpdateItem item);
+  void pull(RowUpdateItem item, int epoch);
 
   //Read fresh values from PS
   void pull();

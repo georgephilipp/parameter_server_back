@@ -347,7 +347,7 @@ void MLREngine::Start() {
           wait(thread_id);
         }
         if(FLAGS_virtual_staleness != -1)
-          mlr_solver->push(item);
+          mlr_solver->push(item, epoch);
         else
           mlr_solver->push();
         if(!workload_mgr.IsEnd())
@@ -368,7 +368,7 @@ void MLREngine::Start() {
 //LOG(INFO) << client_id << " has finished clock for epoch " << epoch+1 << " total time is " << t.t(false);
     STATS_APP_ACCUM_COMP_END();
     if(FLAGS_virtual_staleness != -1)
-      mlr_solver->pull(item);
+      mlr_solver->pull(item, epoch);
     else
       mlr_solver->pull();
     if(num_batches_per_epoch == 1)

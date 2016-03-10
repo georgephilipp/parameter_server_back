@@ -37,13 +37,13 @@ public:
     const = 0;
 
   // Write pending updates to PS for a specified set of rows
-  virtual void push(RowUpdateItem item) = 0; 
+  virtual void push(RowUpdateItem item, int epoch) = 0; 
 
   // Write pending updates to PS
   virtual void push() = 0;
 
   //Read fresh values from PS for a specified set of rows
-  virtual void pull(RowUpdateItem item) = 0;
+  virtual void pull(RowUpdateItem item, int epoch) = 0;
 
   //Read fresh values from PS
   virtual void pull() = 0;

@@ -63,7 +63,7 @@ MLRSGDSolver::~MLRSGDSolver() {
 /////////////////////////////////
 // INCOMPLETE
 /////////////////////////////////
-void MLRSGDSolver::push(RowUpdateItem item)
+void MLRSGDSolver::push(RowUpdateItem item, int epoch)
 {
   LOG(FATAL) << "not implemented";
 }
@@ -73,7 +73,7 @@ void MLRSGDSolver::push()
   RefreshParamFun_(*this);
 }
 
-void MLRSGDSolver::pull(RowUpdateItem item)
+void MLRSGDSolver::pull(RowUpdateItem item, int epoch)
 {
   LOG(FATAL) << "not implemented";
 }
