@@ -525,7 +525,7 @@ void FastDocSamplerVirtual::pullMany(std::vector<int32_t> indeces, bool other)
   }
 }
 
-void FastDocSamplerVirtual::push(RowUpdateItem item)
+void FastDocSamplerVirtual::push(RowUpdateItem item, int iter)
 {
   std::vector<int32_t> updateSchedule;
   int currentRow = item.first;
@@ -569,6 +569,8 @@ void FastDocSamplerVirtual::push(RowUpdateItem item)
 
     for(int i=0; i<V_;i++)
     {
+      if((i+iter) % 2 == 1)
+        continue;
       updateSchedule.push_back(i);
     }
 
@@ -578,7 +580,7 @@ void FastDocSamplerVirtual::push(RowUpdateItem item)
   pushMany(updateSchedule, other);
 }
 
-void FastDocSamplerVirtual::pull(RowUpdateItem item)
+void FastDocSamplerVirtual::pull(RowUpdateItem item, int iter)
 {
   std::vector<int32_t> updateSchedule;
   int currentRow = item.first;
@@ -608,7 +610,11 @@ void FastDocSamplerVirtual::pull(RowUpdateItem item)
     if(FLAGS_client_id % 2 == 1)
       other = true;
     for(int i=0;i<V_;i++)
+    {
+      if((i+iter) % 2 == 1)
+        continue;
       updateSchedule.push_back(i);
+    }
   }
   
   pullMany(updateSchedule, other);

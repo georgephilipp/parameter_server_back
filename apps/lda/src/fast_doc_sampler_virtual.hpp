@@ -78,8 +78,8 @@ public:
   int thread_id;
 
 public:
-  void pull(RowUpdateItem item);
-  void push(RowUpdateItem item);
+  void pull(RowUpdateItem item, int iter);
+  void push(RowUpdateItem item, int iter);
   void buildGlobalCache();
   void updateGlobalCache();  
   std::map<int32_t,int16_t> get_word_topic_row(int wordId);

@@ -462,9 +462,9 @@ void LDAEngine::Start() {
       process_barrier_->wait();
       STATS_APP_DEFINED_ACCUM_SEC_END();
       petuum::HighResolutionTimer syncTimer;
-      virtualSampler.push(item);
+      virtualSampler.push(item, work_unit);
       petuum::PSTableGroup::Clock();
-      virtualSampler.pull(item);
+      virtualSampler.pull(item, work_unit);
       process_barrier_->wait();
 
       //check the cache state
