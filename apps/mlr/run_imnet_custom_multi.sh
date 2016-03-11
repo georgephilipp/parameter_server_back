@@ -96,17 +96,6 @@ num_unique_hosts=`cat $host_file | awk '{ print $2 }' | uniq | wc -l`
 host_list=`cat $host_file | awk '{ print $2 }'`
 num_hosts=`cat $host_file | awk '{ print $2 }' | wc -l`
 
-#derived
-if $add_immediately
-then
-  echo 'adjusting batches per epoch'
-  let num_batches_per_epoch=num_train_data/num_table_threads
-  let num_batches_per_epoch=num_batches_per_epoch/num_hosts
-  let num_batches_per_epoch=num_batches_per_epoch/25
-  echo 'Here is comes'
-  echo $num_batches_per_epoch
-fi
-
 output_dir="${app_dir}/mlr/output"
 #output_dir="${output_dir}/mlr.${outpath_tag}.S${table_staleness}.E${num_epochs}"
 #output_dir="${output_dir}.M${num_unique_hosts}"
